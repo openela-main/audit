@@ -2,7 +2,7 @@
 Summary: User space tools for kernel auditing
 Name: audit
 Version: 3.0.7
-Release: 103%{?dist}
+Release: 104%{?dist}
 License: GPLv2+
 URL: http://people.redhat.com/sgrubb/audit/
 Source0: http://people.redhat.com/sgrubb/audit/%{name}-%{version}.tar.gz
@@ -14,6 +14,8 @@ Patch3: audit-3.0.8-auparse-path-norm.patch
 Patch4: audit-3.0.8-drop-protecthome.patch
 Patch5: audit-3.0.8-flex-array-workaround.patch
 Patch6: audit-3.0.8-undo-flex-array.patch
+
+Patch7: audit-3.1-fanotify-records.patch
 
 BuildRequires: make gcc swig
 BuildRequires: openldap-devel
@@ -95,13 +97,15 @@ Management Facility) database, through an IBM Tivoli Directory Server
 %prep
 %setup -q
 cp %{SOURCE1} .
-%patch1 -p1
-%patch2 -p1
-%patch3 -p1
-%patch4 -p1
+%patch -P 1 -p1
+%patch -P 2 -p1
+%patch -P 3 -p1
+%patch -P 4 -p1
 
 cp /usr/include/linux/audit.h lib/
-%patch5 -p1
+%patch -P 5 -p1
+
+%patch -P 7 -p1
 
 autoreconf -fv --install
 
@@ -278,6 +282,10 @@ fi
 %attr(750,root,root) %{_sbindir}/audispd-zos-remote
 
 %changelog
+* Thu Jun 22 2023 Radovan Sroka <rsroka@redhat.com> - 3.0.7-104
+- Introduce new fanotify record fields
+Resolves: rhbz#2216666
+
 * Mon May 02 2022 Sergio Correia <scorreia@redhat.com> - 3.0.7-103
 - Drop ProtectHome from auditd.service as it interferes with rules
   Resolves: rhbz#2071725 - Default systemd service config blocks audit watch rules in some directories [rhel-9.1.0]
