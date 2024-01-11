@@ -1,0 +1,122 @@
+From d1aec22f62b1cd95c16b26b67a9268ed27713f84 Mon Sep 17 00:00:00 2001
+From: Steve Grubb <sgrubb@redhat.com>
+Date: Tue, 7 Feb 2023 10:32:11 -0500
+Subject: [PATCH] Add support for new FANOTIFY record fields
+
+---
+ ChangeLog              |  1 +
+ auparse/auparse-defs.h |  5 ++--
+ auparse/interpret.c    | 65 +++++++++++++++++++++++++++++++++++++++++-
+ auparse/typetab.h      |  4 +++
+ 4 files changed, 72 insertions(+), 3 deletions(-)
+
+diff --git a/auparse/auparse-defs.h b/auparse/auparse-defs.h
+index 7c0ac76..81a85a4 100644
+--- a/auparse/auparse-defs.h
++++ b/auparse/auparse-defs.h
+@@ -88,7 +88,8 @@ typedef enum {  AUPARSE_TYPE_UNCLASSIFIED,  AUPARSE_TYPE_UID, AUPARSE_TYPE_GID,
+ 	AUPARSE_TYPE_NETACTION, AUPARSE_TYPE_MACPROTO,
+ 	AUPARSE_TYPE_IOCTL_REQ, AUPARSE_TYPE_ESCAPED_KEY,
+ 	AUPARSE_TYPE_ESCAPED_FILE, AUPARSE_TYPE_FANOTIFY,
+-	AUPARSE_TYPE_NLMCGRP, AUPARSE_TYPE_RESOLVE
++	AUPARSE_TYPE_NLMCGRP, AUPARSE_TYPE_RESOLVE, AUPARSE_TYPE_TRUST,
++	AUPARSE_TYPE_FAN_TYPE, AUPARSE_TYPE_FAN_INFO
+ } auparse_type_t;
+ 
+ /* This type determines what escaping if any gets applied to interpreted fields */
+diff --git a/auparse/interpret.c b/auparse/interpret.c
+index 373851f..f106056 100644
+--- a/auparse/interpret.c
++++ b/auparse/interpret.c
+@@ -2372,6 +2372,60 @@ static const char *print_openat2_resolve(const char *val)
+ 	return strdup(buf);
+ }
+ 
++static const char *print_trust(const char *val)
++{
++	const char *out;
++
++	if (strcmp(val, "0") == 0)
++		out = strdup("no");
++	else if (strcmp(val, "1") == 0)
++		out = strdup("yes");
++	else
++		out = strdup("unknown");
++
++	return out;
++}
++
++// fan_type always preceeds fan_info
++static int last_type = 2;
++static const char *print_fan_type(const char *val)
++{
++	const char *out;
++
++	if (strcmp(val, "0") == 0) {
++		out = strdup("none");
++		last_type = 0;
++	} else if (strcmp(val, "1") == 0) {
++		out = strdup("rule_info");
++		last_type = 1;
++	} else {
++		out = strdup("unknown");
++		last_type = 2;
++	}
++
++	return out;
++}
++
++static const char *print_fan_info(const char *val)
++{
++	const char *out;
++	if (last_type == 1) {
++		errno = 0;
++		unsigned long info = strtoul(val, NULL, 16);
++		if (errno) {
++			if (asprintf(&out, "conversion error(%s)", val) < 0)
++				out = NULL;
++			return out;
++		} else {
++			if (asprintf(&out, "%lu", info) < 0)
++				out = NULL;
++			return out;
++		}
++	} else
++		out = strdup(val);
++	return out;
++}
++
+ static const char *print_a0(const char *val, const idata *id)
+ {
+ 	char *out;
+@@ -3286,6 +3340,15 @@ unknown:
+ 		case AUPARSE_TYPE_RESOLVE:
+ 			out = print_openat2_resolve(id->val);
+ 			break;
++		case AUPARSE_TYPE_TRUST:
++			out = print_trust(id->val);
++			break;
++		case AUPARSE_TYPE_FAN_TYPE:
++			out = print_fan_type(id->val);
++			break;
++		case AUPARSE_TYPE_FAN_INFO:
++			out = print_fan_info(id->val);
++			break;
+ 		case AUPARSE_TYPE_MAC_LABEL:
+ 		case AUPARSE_TYPE_UNCLASSIFIED:
+ 		default:
+diff --git a/auparse/typetab.h b/auparse/typetab.h
+index 0e37d02..5c8fca8 100644
+--- a/auparse/typetab.h
++++ b/auparse/typetab.h
+@@ -145,3 +145,7 @@ _S(AUPARSE_TYPE_ESCAPED,	"sw"		)
+ _S(AUPARSE_TYPE_ESCAPED,	"root_dir"	)
+ _S(AUPARSE_TYPE_NLMCGRP,	"nl-mcgrp"	)
+ _S(AUPARSE_TYPE_RESOLVE,	"resolve"	)
++_S(AUPARSE_TYPE_TRUST,		"subj_trust"	)
++_S(AUPARSE_TYPE_TRUST,		"obj_trust"	)
++_S(AUPARSE_TYPE_FAN_TYPE,	"fan_type"	)
++_S(AUPARSE_TYPE_FAN_INFO,	"fan_info"	)
+-- 
+2.41.0
+

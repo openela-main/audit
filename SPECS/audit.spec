@@ -3,7 +3,7 @@
 Summary: User space tools for kernel auditing
 Name: audit
 Version: 3.0.7
-Release: 4%{?dist}
+Release: 5%{?dist}
 License: GPLv2+
 URL: http://people.redhat.com/sgrubb/audit/
 Source0: http://people.redhat.com/sgrubb/audit/%{name}-%{version}.tar.gz
@@ -11,12 +11,16 @@ Source1: https://www.gnu.org/licenses/lgpl-2.1.txt
 
 Patch1: audit-3.0.8-auparse-path-norm.patch
 Patch2: audit-3.0.8-drop-protecthome.patch
+Patch3: audit-3.1-fanotify-records.patch
+Patch4: audit-3.0.8-flex-array-workaround.patch
+Patch5: audit-3.0.8-undo-flex-array.patch
 
 BuildRequires: gcc swig make
 BuildRequires: openldap-devel
 BuildRequires: krb5-devel libcap-ng-devel
 BuildRequires: kernel-headers >= 2.6.29
 BuildRequires: systemd
+#BuildRequires: autoconf automake libtool
 
 Requires: %{name}-libs%{?_isa} = %{version}-%{release}
 Requires(post): systemd coreutils
@@ -86,8 +90,15 @@ Management Facility) database, through an IBM Tivoli Directory Server
 %prep
 %setup -q
 cp %{SOURCE1} .
-%patch1 -p1
-%patch2 -p1
+
+#autoreconf -fv --install
+
+cp /usr/include/linux/audit.h lib/
+
+%patch -P 1 -p1
+%patch -P 2 -p1
+%patch -P 3 -p1
+%patch -P 4 -p1
 
 %build
 %configure --with-python=no \
@@ -112,11 +123,18 @@ rm -f $RPM_BUILD_ROOT/%{_libdir}/libaudit.a
 rm -f $RPM_BUILD_ROOT/%{_libdir}/libauparse.a
 
 find $RPM_BUILD_ROOT -name '*.la' -delete
-find $RPM_BUILD_ROOT/%{_libdir}/python?.?/site-packages -name '*.a' -delete
+find $RPM_BUILD_ROOT/%{_libdir}/python?.?/site-packages -name '*.a' -delete || true
 
 # On platforms with 32 & 64 bit libs, we need to coordinate the timestamp
 touch -r ./audit.spec $RPM_BUILD_ROOT/etc/libaudit.conf
 touch -r ./audit.spec $RPM_BUILD_ROOT/usr/share/man/man5/libaudit.conf.5.gz
+
+# undo the workaround
+cur=`pwd`
+cd $RPM_BUILD_ROOT
+patch -p1 < %{PATCH5}
+find . -name '*.orig' -delete
+cd $cur
 
 %check
 make check
@@ -240,6 +258,12 @@ fi
 %attr(750,root,root) %{_sbindir}/audispd-zos-remote
 
 %changelog
+* Thu Jun 22 2023 Radovan Sroka <rsroka@redhat.com> - 3.0.7-5
+- Introduce new fanotify record fields
+Resolves: rhbz#2216668
+- invalid use of flexible array member
+Resolves: rhbz#2116867
+
 * Mon May 02 2022 Sergio Correia <scorreia@redhat.com> - 3.0.7-4
 - Drop ProtectHome from auditd.service as it interferes with rules
   Resolves: rhbz#2071727 - Default systemd service config blocks audit watch rules in some directories
