@@ -1,0 +1,31 @@
+From becc1c297279f757835943e2cad63992134511f9 Mon Sep 17 00:00:00 2001
+From: Sergio Correia <scorreia@redhat.com>
+Date: Mon, 7 Mar 2022 13:11:09 -0300
+Subject: [PATCH] auparse: fix off-by-one issue in path_norm() (#242)
+
+When defining dest = rpath + 1, we end up having the first char of
+`dest' as NULL -- since `rpath' points to `working', which is a static
+buffer.
+
+With the first char as NULL, path_norm() ends up producing an empty string.
+
+This commit fixes the issue reported in this [1] mailing list post.
+
+[1] https://listman.redhat.com/archives/linux-audit/2022-February/018844.html
+---
+ auparse/interpret.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/auparse/interpret.c b/auparse/interpret.c
+index c8a0d96dd..df593c44c 100644
+--- a/auparse/interpret.c
++++ b/auparse/interpret.c
+@@ -895,7 +895,7 @@ static char *path_norm(const char *name)
+ 		return strdup(name);
+ 
+ 	rpath = working;
+-	dest = rpath + 1;
++	dest = rpath;
+ 	rpath_limit = rpath + PATH_MAX;
+ 
+ 	for (start = name; *start; start = end) {
