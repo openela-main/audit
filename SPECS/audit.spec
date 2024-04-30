@@ -1,21 +1,14 @@
 
 Summary: User space tools for kernel auditing
 Name: audit
-Version: 3.0.7
-Release: 104%{?dist}
+Version: 3.1.2
+Release: 2%{?dist}
 License: GPLv2+
 URL: http://people.redhat.com/sgrubb/audit/
 Source0: http://people.redhat.com/sgrubb/audit/%{name}-%{version}.tar.gz
 Source1: https://www.gnu.org/licenses/lgpl-2.1.txt
 
 Patch1: 0001-Add-ausysrulevalidate.patch
-Patch2: audit-3.0.7-gcc-flags.patch
-Patch3: audit-3.0.8-auparse-path-norm.patch
-Patch4: audit-3.0.8-drop-protecthome.patch
-Patch5: audit-3.0.8-flex-array-workaround.patch
-Patch6: audit-3.0.8-undo-flex-array.patch
-
-Patch7: audit-3.1-fanotify-records.patch
 
 BuildRequires: make gcc swig
 BuildRequires: openldap-devel
@@ -98,14 +91,6 @@ Management Facility) database, through an IBM Tivoli Directory Server
 %setup -q
 cp %{SOURCE1} .
 %patch -P 1 -p1
-%patch -P 2 -p1
-%patch -P 3 -p1
-%patch -P 4 -p1
-
-cp /usr/include/linux/audit.h lib/
-%patch -P 5 -p1
-
-%patch -P 7 -p1
 
 autoreconf -fv --install
 
@@ -116,8 +101,8 @@ sed -i 's/ ids / /' audisp/plugins/Makefile.in
 %configure --with-python=no \
 	   --with-python3=yes \
 	   --enable-gssapi-krb5=yes --with-arm --with-aarch64 \
-	   --with-libcap-ng=yes --enable-zos-remote \
-	   --enable-systemd --enable-experimental
+	   --with-libcap-ng=yes --enable-zos-remote --without-golang \
+	   --enable-systemd --enable-experimental --with-io_uring
 
 make CFLAGS="%{optflags}" %{?_smp_mflags}
 
@@ -134,6 +119,7 @@ make DESTDIR=$RPM_BUILD_ROOT install
 # Validate sample rules shipped.
 for r in $RPM_BUILD_ROOT/%{_datadir}/%{name}/sample-rules/*.rules; do
     PYTHONPATH=$RPM_BUILD_ROOT/%{python3_sitearch} \
+    LD_LIBRARY_PATH=$RPM_BUILD_ROOT/%{_libdir} \
         %{_builddir}/%{name}-%{version}/contrib/ausysrulevalidate \
         --update --rules-file "${r}"
 done
@@ -148,13 +134,6 @@ find $RPM_BUILD_ROOT/%{_libdir}/python%{python3_version}/site-packages -name '*.
 # On platforms with 32 & 64 bit libs, we need to coordinate the timestamp
 touch -r ./audit.spec $RPM_BUILD_ROOT/etc/libaudit.conf
 touch -r ./audit.spec $RPM_BUILD_ROOT/usr/share/man/man5/libaudit.conf.5.gz
-
-# undo the workaround
-cur=`pwd`
-cd $RPM_BUILD_ROOT
-patch -p1 < %{PATCH6}
-find . -name '*.orig' -delete
-cd $cur
 
 %check
 make check
@@ -175,7 +154,6 @@ fi
 %systemd_post auditd.service
 
 %preun
-%systemd_preun auditd.service
 if [ $1 -eq 0 ]; then
     /sbin/service auditd stop > /dev/null 2>&1
 fi
@@ -257,7 +235,6 @@ fi
 %ghost %config(noreplace) %attr(600,root,root) /etc/audit/rules.d/audit.rules
 %ghost %config(noreplace) %attr(640,root,root) /etc/audit/audit.rules
 %config(noreplace) %attr(640,root,root) /etc/audit/audit-stop.rules
-%config(noreplace) %attr(640,root,root) /etc/audit/plugins.d/af_unix.conf
 
 %files -n audispd-plugins
 %config(noreplace) %attr(640,root,root) /etc/audit/audisp-remote.conf
@@ -265,13 +242,16 @@ fi
 %config(noreplace) %attr(640,root,root) /etc/audit/plugins.d/syslog.conf
 %config(noreplace) %attr(640,root,root) /etc/audit/audisp-statsd.conf
 %config(noreplace) %attr(640,root,root) /etc/audit/plugins.d/au-statsd.conf
+%config(noreplace) %attr(640,root,root) /etc/audit/plugins.d/af_unix.conf
 %attr(750,root,root) %{_sbindir}/audisp-remote
 %attr(750,root,root) %{_sbindir}/audisp-syslog
+%attr(750,root,root) %{_sbindir}/audisp-af_unix
 %attr(750,root,root) %{_sbindir}/audisp-statsd
 %attr(700,root,root) %dir %{_var}/spool/audit
 %attr(644,root,root) %{_mandir}/man5/audisp-remote.conf.5.gz
 %attr(644,root,root) %{_mandir}/man8/audisp-remote.8.gz
 %attr(644,root,root) %{_mandir}/man8/audisp-syslog.8.gz
+%attr(644,root,root) %{_mandir}/man8/audisp-af_unix.8.gz
 %attr(644,root,root) %{_mandir}/man8/audisp-statsd.8.gz
 
 %files -n audispd-plugins-zos
@@ -282,9 +262,17 @@ fi
 %attr(750,root,root) %{_sbindir}/audispd-zos-remote
 
 %changelog
+* Wed Nov 08 2023 Sergio Correia <scorreia@redhat.com> - 3.1.2-2
+- Remove %systemd_preun from %preun scriptlet, as it was causing troubles when removing audit
+  Related: RHEL-14896
+
+* Fri Oct 27 2023 Sergio Correia <scorreia@redhat.com> - 3.1.2-1
+- New upstream release, 3.1.2
+  Resolves: RHEL-14896
+
 * Thu Jun 22 2023 Radovan Sroka <rsroka@redhat.com> - 3.0.7-104
 - Introduce new fanotify record fields
-Resolves: rhbz#2216666
+  Resolves: rhbz#2216666
 
 * Mon May 02 2022 Sergio Correia <scorreia@redhat.com> - 3.0.7-103
 - Drop ProtectHome from auditd.service as it interferes with rules
