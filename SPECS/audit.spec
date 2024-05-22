@@ -2,18 +2,12 @@
 
 Summary: User space tools for kernel auditing
 Name: audit
-Version: 3.0.7
-Release: 5%{?dist}
+Version: 3.1.2
+Release: 1%{?dist}
 License: GPLv2+
 URL: http://people.redhat.com/sgrubb/audit/
 Source0: http://people.redhat.com/sgrubb/audit/%{name}-%{version}.tar.gz
 Source1: https://www.gnu.org/licenses/lgpl-2.1.txt
-
-Patch1: audit-3.0.8-auparse-path-norm.patch
-Patch2: audit-3.0.8-drop-protecthome.patch
-Patch3: audit-3.1-fanotify-records.patch
-Patch4: audit-3.0.8-flex-array-workaround.patch
-Patch5: audit-3.0.8-undo-flex-array.patch
 
 BuildRequires: gcc swig make
 BuildRequires: openldap-devel
@@ -90,21 +84,13 @@ Management Facility) database, through an IBM Tivoli Directory Server
 %prep
 %setup -q
 cp %{SOURCE1} .
-
 #autoreconf -fv --install
-
-cp /usr/include/linux/audit.h lib/
-
-%patch -P 1 -p1
-%patch -P 2 -p1
-%patch -P 3 -p1
-%patch -P 4 -p1
 
 %build
 %configure --with-python=no \
 	   --with-python3=yes \
 	   --enable-gssapi-krb5=yes --with-arm --with-aarch64 \
-	   --with-libcap-ng=yes --enable-zos-remote \
+	   --with-libcap-ng=yes --without-golang --enable-zos-remote \
 	   --enable-systemd
 
 make CFLAGS="%{optflags}" %{?_smp_mflags}
@@ -128,13 +114,6 @@ find $RPM_BUILD_ROOT/%{_libdir}/python?.?/site-packages -name '*.a' -delete || t
 # On platforms with 32 & 64 bit libs, we need to coordinate the timestamp
 touch -r ./audit.spec $RPM_BUILD_ROOT/etc/libaudit.conf
 touch -r ./audit.spec $RPM_BUILD_ROOT/usr/share/man/man5/libaudit.conf.5.gz
-
-# undo the workaround
-cur=`pwd`
-cd $RPM_BUILD_ROOT
-patch -p1 < %{PATCH5}
-find . -name '*.orig' -delete
-cd $cur
 
 %check
 make check
@@ -243,12 +222,15 @@ fi
 %config(noreplace) %attr(640,root,root) /etc/audit/audisp-remote.conf
 %config(noreplace) %attr(640,root,root) /etc/audit/plugins.d/au-remote.conf
 %config(noreplace) %attr(640,root,root) /etc/audit/plugins.d/syslog.conf
+%config(noreplace) %attr(640,root,root) /etc/audit/plugins.d/af_unix.conf
 %attr(750,root,root) %{_sbindir}/audisp-remote
 %attr(750,root,root) %{_sbindir}/audisp-syslog
+%attr(750,root,root) %{_sbindir}/audisp-af_unix
 %attr(700,root,root) %dir %{_var}/spool/audit
 %attr(644,root,root) %{_mandir}/man5/audisp-remote.conf.5.gz
 %attr(644,root,root) %{_mandir}/man8/audisp-remote.8.gz
 %attr(644,root,root) %{_mandir}/man8/audisp-syslog.8.gz
+%attr(644,root,root) %{_mandir}/man8/audisp-af_unix.8.gz
 
 %files -n audispd-plugins-zos
 %attr(644,root,root) %{_mandir}/man8/audispd-zos-remote.8.gz
@@ -258,11 +240,15 @@ fi
 %attr(750,root,root) %{_sbindir}/audispd-zos-remote
 
 %changelog
+* Sat Oct 21 2023 Sergio Correia <scorreia@redhat.com> - 3.1.2-1
+- Rebase audit to latest upstream release
+  Resolves: RHEL-15001
+
 * Thu Jun 22 2023 Radovan Sroka <rsroka@redhat.com> - 3.0.7-5
 - Introduce new fanotify record fields
-Resolves: rhbz#2216668
+  Resolves: rhbz#2216668
 - invalid use of flexible array member
-Resolves: rhbz#2116867
+  Resolves: rhbz#2116867
 
 * Mon May 02 2022 Sergio Correia <scorreia@redhat.com> - 3.0.7-4
 - Drop ProtectHome from auditd.service as it interferes with rules
