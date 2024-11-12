@@ -1,8 +1,8 @@
 
 Summary: User space tools for kernel auditing
 Name: audit
-Version: 3.1.2
-Release: 2%{?dist}
+Version: 3.1.5
+Release: 1%{?dist}
 License: GPLv2+
 URL: http://people.redhat.com/sgrubb/audit/
 Source0: http://people.redhat.com/sgrubb/audit/%{name}-%{version}.tar.gz
@@ -19,8 +19,9 @@ BuildRequires: autoconf automake libtool
 
 Requires: %{name}-libs%{?_isa} = %{version}-%{release}
 Requires(post): systemd coreutils
-Requires(preun): systemd initscripts-service
-Requires(postun): systemd coreutils initscripts-service
+Requires(preun): systemd
+Requires(postun): systemd coreutils
+Recommends: initscripts-service
 
 # Placing this here under the assumption that anything using the
 # python libraries expects the system to have an audit daemon
@@ -141,6 +142,8 @@ make check
 rm -f rules/Makefile*
 
 %post
+%systemd_post auditd.service
+
 # Copy default rules into place on new installation
 files=`ls /etc/audit/rules.d/ 2>/dev/null | wc -w`
 if [ "$files" -eq 0 ] ; then
@@ -151,16 +154,27 @@ if [ "$files" -eq 0 ] ; then
 	fi
 	chmod 0600 /etc/audit/rules.d/audit.rules
 fi
-%systemd_post auditd.service
 
-%preun
-if [ $1 -eq 0 ]; then
-    /sbin/service auditd stop > /dev/null 2>&1
+# If upgrading, restart the daemon if it's running
+if [ $1 -eq 2 ]; then
+	state=$(systemctl status auditd | awk '/Active:/ { print $2 }')
+
+	if [ $state = "active" ] ; then
+		auditctl --signal stop || true
+		systemctl start auditd
+	fi
+# if installing, start it since preset says we should be running
+elif [ $1 -eq 1 ]; then
+	systemctl start auditd
 fi
 
-%postun
-if [ $1 -ge 1 ]; then
-    /sbin/service auditd condrestart > /dev/null 2>&1 || :
+%preun
+%systemd_preun auditd.service
+# if uninstalling stop the daemon
+if [ $1 -eq 0 ]; then
+	auditctl --signal stop || true
+	# also delete loaded rules if uninstalling
+	auditctl -D || true
 fi
 
 %files libs
@@ -225,7 +239,6 @@ fi
 %attr(750,root,root) %{_libexecdir}/initscripts/legacy-actions/auditd/rotate
 %attr(750,root,root) %{_libexecdir}/initscripts/legacy-actions/auditd/state
 %attr(750,root,root) %{_libexecdir}/initscripts/legacy-actions/auditd/stop
-%attr(750,root,root) %{_libexecdir}/audit-functions
 %ghost %{_localstatedir}/run/auditd.state
 %attr(-,root,-) %dir %{_var}/log/audit
 %attr(750,root,root) %dir /etc/audit
@@ -262,6 +275,22 @@ fi
 %attr(750,root,root) %{_sbindir}/audispd-zos-remote
 
 %changelog
+* Tue Jul 09 2024 Attila Lakatos <alakatos@redhat.com> - 3.1.5-1
+- New upstream maintenance release, 3.1.4
+- Prevent scriplets from failing
+- When upgrading, restart the daemon if it's running
+- If uninstalling, stop the daemon
+- auditctl: use pidfd_send_signal for signaling auditd
+  Resolves: RHEL-45865
+- Minor doc update
+  Resolves: RHEL-5186
+- augenrules: do not exit with failure if in immutable mode
+  Resolves: RHEL-40110
+- auditd.service: Disable ProtectControlGroups
+  Resolves: RHEL-5197
+- auditctl: correct output when displaying rules with exe/path/dir
+  Resolves: RHEL-40243
+
 * Wed Nov 08 2023 Sergio Correia <scorreia@redhat.com> - 3.1.2-2
 - Remove %systemd_preun from %preun scriptlet, as it was causing troubles when removing audit
   Related: RHEL-14896
