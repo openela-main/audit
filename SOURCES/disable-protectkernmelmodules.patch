@@ -1,0 +1,14 @@
+diff --git a/init.d/auditd.service b/init.d/auditd.service
+index 8210c60eb..dd7ec694b 100644
+--- a/init.d/auditd.service
++++ b/init.d/auditd.service
+@@ -38,7 +38,8 @@ MemoryDenyWriteExecute=true
+ LockPersonality=true
+ # The following control prevents rules on /proc so its off by default
+ #ProtectControlGroups=true
+-ProtectKernelModules=true
++## The following control prevents rules on /usr/lib/modules/ its off by default
++#ProtectKernelModules=true
+ RestrictRealtime=true
+ 
+ [Install]

@@ -2,13 +2,20 @@
 Summary: User space tools for kernel auditing
 Name: audit
 Version: 3.1.5
-Release: 1%{?dist}
+Release: 4%{?dist}
 License: GPLv2+
 URL: http://people.redhat.com/sgrubb/audit/
 Source0: http://people.redhat.com/sgrubb/audit/%{name}-%{version}.tar.gz
 Source1: https://www.gnu.org/licenses/lgpl-2.1.txt
 
 Patch1: 0001-Add-ausysrulevalidate.patch
+Patch2: audisp-restore.patch
+Patch3: audisp-restore-fix.patch
+Patch4: readonly.patch
+Patch5: disable-protectkernmelmodules.patch
+Patch6: remote-logging-ordering-cycle.patch
+Patch7: permtab-filter-unsupport.patch
+Patch8: auditctl-permtab.patch
 
 BuildRequires: make gcc swig
 BuildRequires: openldap-devel
@@ -92,6 +99,13 @@ Management Facility) database, through an IBM Tivoli Directory Server
 %setup -q
 cp %{SOURCE1} .
 %patch -P 1 -p1
+%patch -P 2 -p1
+%patch -P 3 -p1
+%patch -P 4 -p1
+%patch -P 5 -p1
+%patch -P 6 -p1
+%patch -P 7 -p1
+%patch -P 8 -p1
 
 autoreconf -fv --install
 
@@ -143,6 +157,10 @@ rm -f rules/Makefile*
 
 %post
 %systemd_post auditd.service
+# Do not perform service start/restart when running during an rpm-ostree compose
+if [ -f /run/ostree-booted ] ; then
+    exit 0
+fi
 
 # Copy default rules into place on new installation
 files=`ls /etc/audit/rules.d/ 2>/dev/null | wc -w`
@@ -229,6 +247,7 @@ fi
 %attr(755,root,root) %{_bindir}/aulast
 %attr(755,root,root) %{_bindir}/aulastlog
 %attr(755,root,root) %{_bindir}/ausyscall
+%attr(640,root,root) %{_tmpfilesdir}/audit.conf
 %attr(755,root,root) %{_bindir}/auvirt
 %attr(644,root,root) %{_unitdir}/auditd.service
 %attr(750,root,root) %dir %{_libexecdir}/initscripts/legacy-actions/auditd
@@ -275,6 +294,26 @@ fi
 %attr(750,root,root) %{_sbindir}/audispd-zos-remote
 
 %changelog
+* Tue Feb 11 2025 Attila Lakatos <alakatos@redhat.com> - 3.1.5-4
+- auditctl: correct buffer in filter_supported_syscalls to avoid overflow
+  Resolves: RHEL-59585
+
+* Mon Feb 03 2025 Attila Lakatos <alakatos@redhat.com> - 3.1.5-3
+- Don't do "live" operations during rpm-ostree composes
+  Resolves: RHEL-69033
+
+* Wed Jan 08 2025 Attila Lakatos <alakatos@redhat.com> - 3.1.5-2
+- Disable ProtectKernelModules=true in service file
+  Resolves: RHEL-59570
+- af_unix plugin: restore original behavior in binary mode
+  Resolves: RHEL-59585
+- Support image mode
+  Resolves: RHEL-69033
+- Resolve ordering cycle when using remote logging
+  Resolves: RHEL-11252
+- Filter syscalls to ensure architecture-specific availability
+  Resolves: RHEL-70455
+
 * Tue Jul 09 2024 Attila Lakatos <alakatos@redhat.com> - 3.1.5-1
 - New upstream maintenance release, 3.1.4
 - Prevent scriplets from failing
