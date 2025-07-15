@@ -3,11 +3,14 @@
 Summary: User space tools for kernel auditing
 Name: audit
 Version: 3.1.2
-Release: 1%{?dist}
+Release: 1%{?dist}.1
 License: GPLv2+
 URL: http://people.redhat.com/sgrubb/audit/
 Source0: http://people.redhat.com/sgrubb/audit/%{name}-%{version}.tar.gz
 Source1: https://www.gnu.org/licenses/lgpl-2.1.txt
+
+Patch0: protected-kernel-modules.patch
+Patch1: augenrules-immutable.patch
 
 BuildRequires: gcc swig make
 BuildRequires: openldap-devel
@@ -83,6 +86,10 @@ Management Facility) database, through an IBM Tivoli Directory Server
 
 %prep
 %setup -q
+
+%patch -P 0 -p1
+%patch -P 1 -p1
+
 cp %{SOURCE1} .
 #autoreconf -fv --install
 
@@ -240,6 +247,12 @@ fi
 %attr(750,root,root) %{_sbindir}/audispd-zos-remote
 
 %changelog
+* Mon Mar 31 2025 Attila Lakatos <alakatos@redhat.com> - 3.1.2-1.1
+- Allow defining rules for /usr/lib/modules dir
+  Resolves: RHEL-59013
+- augenrules: fix return code if immutable mode is set
+  Resolves: RHEL-40109
+
 * Sat Oct 21 2023 Sergio Correia <scorreia@redhat.com> - 3.1.2-1
 - Rebase audit to latest upstream release
   Resolves: RHEL-15001
