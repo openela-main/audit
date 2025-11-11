@@ -1,0 +1,164 @@
+diff --git a/docs/auditd.conf.5 b/docs/auditd.conf.5
+index 0b785e7a3..fae6efda9 100644
+--- a/docs/auditd.conf.5
++++ b/docs/auditd.conf.5
+@@ -156,7 +156,7 @@ while the audit daemon is running, you should send the audit daemon SIGHUP to re
+ This parameter tells the system what action to take when the system has
+ detected that it is starting to get low on disk space.
+ Valid values are
+-.IR ignore ", " syslog ", " rotate ", " email ", " exec ", " suspend ", " single ", and " halt .
++.IR ignore ", " syslog ", " rotate ", " email ", " exec ", " suspend ", and " single .
+ If set to
+ .IR ignore ,
+ the audit daemon does nothing.
+@@ -173,9 +173,20 @@ as well as sending the message to syslog.
+ .I suspend
+ will cause the audit daemon to stop writing records to the disk. The daemon will still be alive. The
+ .I single
+-option will cause the audit daemon to put the computer system in single user mode. The
++option will cause the audit daemon to put the computer system in single user mode. Except for rotate, it will perform this action just one time. The previously available
+ .I halt
+-option will cause the audit daemon to shutdown the computer system. Except for rotate, it will perform this action just one time.
++option, which would cause the audit daemon to shut down the computer system, has been deprecated and should no longer be used. It was determined that halting the system at this stage could lead to unintended consequences and is considered a bad action if selected.
++
++Disk space notifications follow a three-stage progression. The
++.I space_left_action
++is the low water mark and serves as the first warning that disk space is running low. Halting at this stage is not recommended, as it prevents administrators from taking corrective action. The next stage,
++.I admin_space_left_action,
++indicates an emergency level where immediate action is required to free up disk space. Administrators should configure critical responses for this level. Finally, the
++.I disk_full_action
++occurs when the disk is completely full. At this stage, the system may have already halted, and preemptive measures configured in earlier stages will determine the system’s behavior.
++
++
++
+ .TP
+ .I admin_space_left
+ This is a numeric value in megabytes that tells the audit daemon when
+diff --git a/src/auditd-config.c b/src/auditd-config.c
+index b2992e647..5065e6aa6 100644
+--- a/src/auditd-config.c
++++ b/src/auditd-config.c
+@@ -1034,6 +1034,11 @@ static int space_action_parser(const struct nv_pair *nv, int line,
+ 				if (check_exe_name(nv->option, line))
+ 					return 1;
+ 				config->space_left_exe = strdup(nv->option);
++			} else if (failure_actions[i].option == FA_HALT) {
++				audit_msg(LOG_ERR,
++					"The HALT option in space_left_action has been deprecated"
++					" to prevent system instability from premature shutdowns.");
++				return 1;
+ 			}
+ 			config->space_left_action = failure_actions[i].option;
+ 			return 0;
+@@ -1043,6 +1048,13 @@ static int space_action_parser(const struct nv_pair *nv, int line,
+ 	return 1;
+ }
+ 
++const char *failure_action_to_str(unsigned int action)
++{
++	if (action > FA_HALT)
++		return "unknown";
++	return failure_actions[action].name;
++}
++
+ // returns 0 if OK, 1 on temp error, 2 on permanent error
+ static int validate_email(const char *acct)
+ {
+diff --git a/src/auditd-config.h b/src/auditd-config.h
+index dae6a5086..3d7170476 100644
+--- a/src/auditd-config.h
++++ b/src/auditd-config.h
+@@ -114,4 +114,6 @@ int start_config_manager(struct auditd_event *e);
+ #endif
+ void free_config(struct daemon_conf *config);
+ 
++const char *failure_action_to_str(unsigned int action);
++
+ #endif
+diff --git a/src/auditd-event.c b/src/auditd-event.c
+index fb3b98be4..3a64d5aae 100644
+--- a/src/auditd-event.c
++++ b/src/auditd-event.c
+@@ -829,19 +829,36 @@ extern int sendmail(const char *subject, const char *content,
+ static void do_space_left_action(int admin)
+ {
+ 	int action;
++	char buffer[256];
++	const char *next_actions;
+ 
+-	if (admin)
++	// Select the appropriate action and generate a meaningful message
++	// explaining what happens if disk space reaches a threshold or
++	// becomes completely full.
++	if (admin) {
+ 		action = config->admin_space_left_action;
+-	else
++
++		snprintf(buffer, sizeof(buffer),
++			"If the disk becomes full, audit will %s.",  failure_action_to_str(config->disk_full_action));
++	}
++	else {
+ 		action = config->space_left_action;
+ 
++		snprintf(buffer, sizeof(buffer),
++			"If the admin space left threshold is reached, audit will %s. "
++			"If the disk becomes full, audit will %s.",
++			failure_action_to_str(config->admin_space_left_action),
++			failure_action_to_str(config->disk_full_action));
++	}
++	next_actions = buffer;
++
+ 	switch (action)
+ 	{
+ 		case FA_IGNORE:
+ 			break;
+ 		case FA_SYSLOG:
+ 			audit_msg(LOG_ALERT,
+-			    "Audit daemon is low on disk space for logging");
++				"Audit daemon is low on disk space for logging. %s", next_actions);
+ 			break;
+ 		case FA_ROTATE:
+ 			if (config->num_logs > 1) {
+@@ -851,19 +868,24 @@ static void do_space_left_action(int admin)
+ 			}
+ 			break;
+ 		case FA_EMAIL:
++			char content[512];
++			const char *subject;
++
+ 			if (admin == 0) {
+-				sendmail("Audit Disk Space Alert",
+-				"The audit daemon is low on disk space for logging! Please take action\nto ensure no loss of service.",
+-					config->action_mail_acct);
+-				audit_msg(LOG_ALERT,
+-			    "Audit daemon is low on disk space for logging");
++				subject = "Audit Disk Space Alert";
++				snprintf(content, sizeof(content),
++					"The audit daemon is low on disk space for logging! Please take action\n"
++					"to ensure no loss of service.\n"
++					"%s", next_actions);
+ 			} else {
+-				sendmail("Audit Admin Space Alert",
+-				"The audit daemon is very low on disk space for logging! Immediate action\nis required to ensure no loss of service.",
+-					config->action_mail_acct);
+-				audit_msg(LOG_ALERT,
+-			  "Audit daemon is very low on disk space for logging");
++				subject = "Audit Admin Space Alert";
++				snprintf(content, sizeof(content),
++					"The audit daemon is very low on disk space for logging! Immediate action\n"
++					"is required to ensure no loss of service.\n"
++					"%s", next_actions);
+ 			}
++			sendmail(subject, content, config->action_mail_acct);
++			audit_msg(LOG_ALERT, "%s", content);
+ 			break;
+ 		case FA_EXEC:
+ 			// Close the logging file in case the script zips or
+@@ -897,6 +919,7 @@ static void do_space_left_action(int admin)
+ 			stop = 1;
+ 			break;
+ 		case FA_HALT:
++			// Only available for admin
+ 			audit_msg(LOG_ALERT,
+ 				"The audit daemon is now halting the system and exiting due to low disk space");
+ 			change_runlevel(HALT);

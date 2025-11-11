@@ -1,0 +1,134 @@
+diff --git a/audit.spec b/audit.spec
+index ee839006a..5ca742888 100644
+--- a/audit.spec
++++ b/audit.spec
+@@ -210,6 +210,7 @@ fi
+ %attr(644,root,root) %{_mandir}/man8/aulastlog.8.gz
+ %attr(644,root,root) %{_mandir}/man8/ausyscall.8.gz
+ %attr(644,root,root) %{_mandir}/man5/auditd.conf.5.gz
++%attr(644,root,root) %{_mandir}/man5/auditd.cron.5.gz
+ %attr(644,root,root) %{_mandir}/man5/auditd-plugins.5.gz
+ %attr(755,root,root) %{_sbindir}/auditd
+ %attr(755,root,root) %{_sbindir}/ausearch
+diff --git a/docs/Makefile.am b/docs/Makefile.am
+index 9db23cb3d..410ecda62 100644
+--- a/docs/Makefile.am
++++ b/docs/Makefile.am
+@@ -68,5 +68,6 @@ ausearch_next_event.3 ausearch_cur_event.3 ausearch_set_stop.3 \
+ get_auditfail_action.3 set_aumessage_mode.3 \
+ audispd-zos-remote.8 libaudit.conf.5 \
+ augenrules.8 audit_set_backlog_wait_time.3 \
+-zos-remote.conf.5
++zos-remote.conf.5 \
++auditd.cron.5
+ 
+diff --git a/docs/auditd.conf.5 b/docs/auditd.conf.5
+index fae6efda9..d5765dd43 100644
+--- a/docs/auditd.conf.5
++++ b/docs/auditd.conf.5
+@@ -432,6 +432,10 @@ record type >= AUDIT_MAC_UNLBL_ALLOW && record type <= AUDIT_MAC_CALIPSO_DEL (th
+ for the stream being processed, the time of the event is over end_of_event_timeout seconds old.
+ .RE
+ 
++.SH LOG ROTATION POLICY
++
++By default, auditd uses size-based log rotation. If you prefer time-based rotation (e.g., hourly, daily, weekly, or custom schedule), refer to auditd.cron(5) for configuration details.
++
+ .SH FILES
+ .TP
+ .I /etc/audit/auditd.conf
+@@ -440,7 +444,8 @@ Audit daemon configuration file
+ .SH "SEE ALSO"
+ .BR auditd (8),
+ .BR audisp\-remote.conf (5),
+-.BR auditd\-plugins (5).
++.BR auditd\-plugins (5),
++.BR auditd.cron (5).
+ 
+ .SH AUTHOR
+ Steve Grubb
+diff --git a/docs/auditd.cron.5 b/docs/auditd.cron.5
+new file mode 100644
+index 000000000..af1409823
+--- /dev/null
++++ b/docs/auditd.cron.5
+@@ -0,0 +1,66 @@
++.TH AUDITD.CRON "5" "Feb 2025" "Red Hat" "System Administration Utilities"
++.SH NAME
++auditd.conf \- time-based rotation of audit logs
++.SH DESCRIPTION
++By default, the audit daemon (auditd) supports size-based log rotation, where logs are rotated once they reach a specified size, as configured in 
++.I /etc/audit/auditd.conf.
++This manual describes an alternative method: time-based log rotation using
++.B cron.
++Using this approach, audit logs can be rotated at specified intervals (hourly, daily, weekly or on a custom date), regardless of their size.
++
++.SH CONFIGURATION
++
++.B 1.Disable Size-Based Rotation:  
++
++To enable time-based log rotation, first disable \fBauditd's\fP built-in size-based rotation by setting the following parameter in
++.I /etc/audit/auditd.conf:
++
++.RS
++max_log_file_action = ignore
++.RE
++
++.B 2. Configure Log Retention:
++
++The 
++.B num_logs
++parameter determines the number of rotated log files to keep. For daily rotation, setting 
++
++.RS
++num_logs = 7
++.RE
++
++ensures that logs from the last seven days are retained. However, on busy systems, audit logs may grow rapidly, potentially leading to a lack of disk space. To prevent this, ensure that the 
++.B space_left_action
++parameter is configured to handle low-disk-space situations appropriately.
++
++.B 3. Apply Configuration Changes:
++
++After modifying the main auditd configuration file, reload auditd to apply the changes:
++
++.RS
++auditctl --signal reload
++.RE
++
++.B 4. Deploy the Rotation Script:
++
++Copy the provided
++.B auditd.cron
++script to the appropriate cron directory (
++.IR cron.daily
++or 
++.IR cron.hourly
++or
++.IR cron.weekly
++, depending on your rotation preference). Then, ensure the file has the correct SELinux labels:
++
++.RS
++cp /usr/share/doc/audit/auditd.cron /etc/cron.daily
++.RE
++
++.SH "SEE ALSO"
++.BR auditd.conf (5),
++.BR auditd (8),
++.BR cron(8).
++
++.SH AUTHOR
++Attila Lakatos
+diff --git a/init.d/auditd.cron b/init.d/auditd.cron
+index 825cb227d..e692231df 100644
+--- a/init.d/auditd.cron
++++ b/init.d/auditd.cron
+@@ -5,7 +5,7 @@
+ # based on time instead of log size.
+ ##########
+ 
+-/sbin/auditctl --signal usr1
++/sbin/auditctl --signal rotate
+ EXITVALUE=$?
+ if [ $EXITVALUE != 0 ]; then
+     /usr/bin/logger -t auditd "ALERT auditctl exited abnormally with [$EXITVALUE] while rotating the logs"

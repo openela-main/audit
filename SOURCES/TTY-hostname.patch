@@ -1,0 +1,14 @@
+diff --git a/lib/audit_logging.c b/lib/audit_logging.c
+index 4da95b5e6..f63c37d2c 100644
+--- a/lib/audit_logging.c
++++ b/lib/audit_logging.c
+@@ -243,7 +243,8 @@ static const char *_get_hostname(const char *ttyn)
+ {
+ 	if (ttyn && ((strncmp(ttyn, "pts", 3) == 0) ||
+ 		(strncmp(ttyn, "tty", 3) == 0) ||
+-		(strncmp(ttyn, "/dev/tty", 8) == 0) )) {
++		(strncmp(ttyn, "/dev/tty", 8) == 0) ||
++		(strncmp(ttyn, "/dev/pts", 8) == 0) )) {
+ 		if (_host[0] == 0) {
+ 			gethostname(_host, HOSTLEN);
+ 			_host[HOSTLEN - 1] = 0;

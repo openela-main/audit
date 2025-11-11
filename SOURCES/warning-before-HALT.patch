@@ -1,0 +1,87 @@
+diff --git a/common/common.c b/common/common.c
+index cd15b1691..13065a0c7 100644
+--- a/common/common.c
++++ b/common/common.c
+@@ -25,6 +25,8 @@
+ #include <fcntl.h>
+ #include <unistd.h>
+ #include <stdio.h>
++#include <utmpx.h>
++#include <fcntl.h>
+ 
+ /*
+  * This function returns 1 if it is the last record in an event.
+@@ -75,4 +77,36 @@ int write_to_console(const char *fmt, ...)
+ 	close(fd);
+ 
+ 	return res;
++}
++
++void wall_message(const char* format, ...)
++{
++	struct utmpx* entry;
++	char message[512];
++	va_list args;
++	int fd;
++
++	// Format the message
++	va_start(args, format);
++	vsnprintf(message, sizeof(message), format, args);
++	va_end(args);
++
++	setutxent();
++
++	// Send the message to all active users
++	while ((entry = getutxent())) {
++		// Only active users have a valid terminal
++		if (entry->ut_type == USER_PROCESS) {
++			char tty_path[128];
++			snprintf(tty_path, sizeof(tty_path), "/dev/%s", entry->ut_line);
++
++			fd = open(tty_path, O_WRONLY | O_NOCTTY);
++			if (fd != -1) {
++				dprintf(fd, "\nBroadcast message from audit daemon:\n%s\n", message);
++				close(fd);
++			}
++		}
++	}
++
++	endutxent();
+ }
+\ No newline at end of file
+diff --git a/common/common.h b/common/common.h
+index 5d4b66945..61dbe7d23 100644
+--- a/common/common.h
++++ b/common/common.h
+@@ -57,6 +57,13 @@ int write_to_console(const char *fmt, ...)
+ 	;
+ #endif
+ 
++void wall_message(const char *fmt, ...)
++#ifdef __GNUC__
++	__attribute__((format(printf, 1, 2)));
++#else
++	;
++#endif
++
+ AUDIT_HIDDEN_END
+ #endif
+ 
+diff --git a/src/auditd-event.c b/src/auditd-event.c
+index 3a64d5aae..a6eeb2c18 100644
+--- a/src/auditd-event.c
++++ b/src/auditd-event.c
+@@ -852,6 +852,13 @@ static void do_space_left_action(int admin)
+ 	}
+ 	next_actions = buffer;
+ 
++	// If space_left is reached and FA_HALT is set in any of these fields
++	// we need to inform logged in users.
++	if (config->admin_space_left_action == FA_HALT ||
++		config->disk_full_action == FA_HALT) {
++		wall_message("The audit system is low on disk space and is now halting the system for admin corrective action.");
++	}
++
+ 	switch (action)
+ 	{
+ 		case FA_IGNORE:

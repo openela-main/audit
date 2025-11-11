@@ -2,7 +2,7 @@
 Summary: User space tools for kernel auditing
 Name: audit
 Version: 4.0.3
-Release: 1%{?dist}
+Release: 4%{?dist}
 License: GPL-2.0-or-later AND LGPL-2.0-or-later
 URL: https://github.com/linux-audit/audit-userspace/
 Source0: https://github.com/linux-audit/audit-userspace/archive/refs/tags/v%{version}.tar.gz
@@ -13,9 +13,16 @@ BuildRequires: kernel-headers >= 5.0
 BuildRequires: systemd
 
 Patch0: remote-logging-ordering-cycle.patch
+Patch1: timebased-log-rotation.patch
+Patch2: remove-HALT-spaceleftaction.patch
+Patch3: warning-before-HALT.patch
+Patch4: TTY-hostname.patch
+Patch5: permtab-unsupport-syscalls-v1.patch
+Patch6: permtab-unsupport-syscalls-v2.patch
+Patch7: ausearch-checkpoint-race.patch
 
 Requires: %{name}-libs%{?_isa} = %{version}-%{release}
-Requires: %{name}-rules%{?_isa} = %{version}-%{release}
+Recommends: %{name}-rules%{?_isa} = %{version}-%{release}
 Requires(post): systemd coreutils
 Requires(preun): systemd
 Requires(postun): systemd coreutils
@@ -92,6 +99,7 @@ Management Facility) database, through an IBM Tivoli Directory Server
 Summary: audit rules and utilities
 License: GPL-2.0-or-later
 Recommends: %{name} = %{version}-%{release}
+Requires: %{name}-libs%{?_isa} = %{version}-%{release}
 
 %description rules
 The audit rules package contains the rules and utilities to load audit rules.
@@ -99,6 +107,13 @@ The audit rules package contains the rules and utilities to load audit rules.
 %prep
 %setup -q -n %{name}-userspace-%{version}
 %patch -P 0 -p1
+%patch -P 1 -p1
+%patch -P 2 -p1
+%patch -P 3 -p1
+%patch -P 4 -p1
+%patch -P 5 -p1
+%patch -P 6 -p1
+%patch -P 7 -p1
 cp %{SOURCE1} .
 
 %build
@@ -165,14 +180,14 @@ if [ "$files" -eq 0 ] ; then
     echo "No rules detected, adding default"
 %if 0%{?rhel}
     if [ -e %{_datadir}/%{name}-rules/10-base-config.rules ] ; then
-        install -m 0600 -o 0 -g 0 -p %{_datadir}/%{name}-rules/10-base-config.rules /etc/audit/rules.d/audit.rules
+        install -m 0640 -o 0 -g 0 -p %{_datadir}/%{name}-rules/10-base-config.rules /etc/audit/rules.d/audit.rules
 %else
     # FESCO asked for audit to be off by default. #1117953
     if [ -e %{_datadir}/%{name}-rules/10-no-audit.rules ] ; then
-        install -m 0600 -o 0 -g 0 -p %{_datadir}/%{name}-rules/10-no-audit.rules /etc/audit/rules.d/audit.rules
+        install -m 0640 -o 0 -g 0 -p %{_datadir}/%{name}-rules/10-no-audit.rules /etc/audit/rules.d/audit.rules
 %endif
     else
-        install -m 0600 -o 0 -g 0 /dev/null /etc/audit/rules.d/audit.rules
+        install -m 0640 -o 0 -g 0 /dev/null /etc/audit/rules.d/audit.rules
     fi
     # Only load the new rules if not running during an rpm-ostree compose
     if [ ! -f /run/ostree-booted ] ; then
@@ -233,6 +248,7 @@ fi
 %attr(644,root,root) %{_mandir}/man8/ausyscall.8.gz
 %attr(644,root,root) %{_mandir}/man5/auditd.conf.5.gz
 %attr(644,root,root) %{_mandir}/man5/auditd-plugins.5.gz
+%attr(644,root,root) %{_mandir}/man5/auditd.cron.5.gz
 %attr(755,root,root) %{_sbindir}/auditd
 %attr(755,root,root) %{_sbindir}/ausearch
 %attr(755,root,root) %{_sbindir}/aureport
@@ -299,6 +315,26 @@ fi
 %attr(750,root,root) %{_sbindir}/audispd-zos-remote
 
 %changelog
+* Fri Apr 11 2025 Attila Lakatos <alakatos@redhat.com> - 4.0.3-4
+- ausearch-checkpoint race condition fix
+  Resolves: RHEL-86896
+
+* Fri Apr 04 2025 Attila Lakatos <alakatos@redhat.com> - 4.0.3-3
+- Adjust dependency between audit and audit-rules
+  Resolves: RHEL-77141
+
+* Fri Mar 28 2025 Attila Lakatos <alakatos@redhat.com> - 4.0.3-2
+- Add auditd.cron (5) man page for time-based log rotation description
+  Resolves: RHEL-77141
+- Remove HALT from space_left_action
+- Broadcast warning to users when auditd is about to halt
+  Resolves: RHEL-73111
+- Fix TTY hostname in log messages
+  Resolves: RHEL-79476
+- permtab: remove unsupported syscalls from rules
+  Resolves: RHEL-59560
+- Restore permission on audit.rules
+
 * Wed Jan 08 2025 Attila Lakatos <alakatos@redhat.com> - 4.0.3-1
 - Rebase to 4.0.3
 - Pluginst must have .conf suffix, otherwise skipped
