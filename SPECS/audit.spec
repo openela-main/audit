@@ -2,7 +2,7 @@
 Summary: User space tools for kernel auditing
 Name: audit
 Version: 3.1.5
-Release: 4%{?dist}
+Release: 7%{?dist}
 License: GPLv2+
 URL: http://people.redhat.com/sgrubb/audit/
 Source0: http://people.redhat.com/sgrubb/audit/%{name}-%{version}.tar.gz
@@ -16,6 +16,14 @@ Patch5: disable-protectkernmelmodules.patch
 Patch6: remote-logging-ordering-cycle.patch
 Patch7: permtab-filter-unsupport.patch
 Patch8: auditctl-permtab.patch
+Patch9: interpret-tty-data.patch
+Patch10: tty-hostname.patch
+Patch11: ausearch-DAEMON_END.patch
+Patch12: afunix-memleak.patch
+Patch13: end-of-event.patch
+Patch14: end-of-event-check.patch
+Patch15: end-of-event-gdm.patch
+Patch16: ausearch-checkpoint-race.patch
 
 BuildRequires: make gcc swig
 BuildRequires: openldap-devel
@@ -106,6 +114,14 @@ cp %{SOURCE1} .
 %patch -P 6 -p1
 %patch -P 7 -p1
 %patch -P 8 -p1
+%patch -P 9 -p1
+%patch -P 10 -p1
+%patch -P 11 -p1
+%patch -P 12 -p1
+%patch -P 13 -p1
+%patch -P 14 -p1
+%patch -P 15 -p1
+%patch -P 16 -p1
 
 autoreconf -fv --install
 
@@ -294,6 +310,21 @@ fi
 %attr(750,root,root) %{_sbindir}/audispd-zos-remote
 
 %changelog
+* Fri Apr 11 2025 Attila Lakatos <alakatos@redhat.com> - 3.1.5-7
+- ausearch-checkpoint race condition fix
+  Resolves: RHEL-86897
+
+* Wed Apr 02 2025 Attila Lakatos <alakatos@redhat.com> - 3.1.5-6
+- Update end of event detection mechanism
+  Resolves: RHEL-78323
+
+* Fri Mar 28 2025 Attila Lakatos <alakatos@redhat.com> - 3.1.5-5
+- ausearch: correct search for DAEMON related events
+- allow hex digits when interpreting tty data
+  Resolves: RHEL-82279
+- Fix TTY hostname in log messages
+  Resolves: RHEL-78323
+
 * Tue Feb 11 2025 Attila Lakatos <alakatos@redhat.com> - 3.1.5-4
 - auditctl: correct buffer in filter_supported_syscalls to avoid overflow
   Resolves: RHEL-59585

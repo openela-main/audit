@@ -1,0 +1,12 @@
+diff --git a/audisp/plugins/af_unix/audisp-af_unix.c b/audisp/plugins/af_unix/audisp-af_unix.c
+index 578533f52..e2e7dc7ef 100644
+--- a/audisp/plugins/af_unix/audisp-af_unix.c
++++ b/audisp/plugins/af_unix/audisp-af_unix.c
+@@ -253,6 +253,7 @@ void read_audit_record(int ifd)
+ 					do {
+ 						rc = write(conn, str, str_len);
+ 					} while (rc < 0 && errno == EINTR);
++					free(str);
+ 				} else if (format == F_BINARY) {
+ 					struct iovec vec[2];
+ 

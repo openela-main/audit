@@ -1,0 +1,1065 @@
+From fee6bc3ffbdf12a58ab55a2c9f6cf2728075d38e Mon Sep 17 00:00:00 2001
+From: Steve Grubb <sgrubb@redhat.com>
+Date: Sat, 26 Aug 2023 10:45:30 -0400
+Subject: [PATCH] Update auparse tests that broke updating EOE detection
+
+---
+ auparse/test/auparse_test.c      |   2 +-
+ auparse/test/auparse_test.py     |   2 +-
+ auparse/test/auparse_test.ref    | 286 ++++++++++++++++++++++++-------
+ auparse/test/auparse_test.ref.py | 286 ++++++++++++++++++++++++-------
+ auparse/test/test.log            |   4 +-
+ auparse/test/test2.log           |  22 +--
+ 6 files changed, 471 insertions(+), 131 deletions(-)
+
+diff --git a/auparse/test/auparse_test.c b/auparse/test/auparse_test.c
+index 421b903c..f46d64c2 100644
+--- a/auparse/test/auparse_test.c
++++ b/auparse/test/auparse_test.c
+@@ -269,7 +269,7 @@ static void auparse_callback(auparse_state_t *au, auparse_cb_event_t cb_event_ty
+ int main(void)
+ {
+ 	//char *files[4] = { "test.log", "test2.log", "test3.log", NULL };
+-	char *files[3] = { "test.log", "test2.log", NULL };
++	char *files[3] = { "test2.log", "test.log", NULL };
+ 	setlocale (LC_ALL, "");
+ 	auparse_state_t *au;
+ 
+diff --git a/auparse/test/auparse_test.py b/auparse/test/auparse_test.py
+index 583c593f..fedb2f1f 100755
+--- a/auparse/test/auparse_test.py
++++ b/auparse/test/auparse_test.py
+@@ -6,7 +6,7 @@ srcdir = os.getenv('srcdir')
+ buf = ["type=LOGIN msg=audit(1143146623.787:142): login pid=2027 uid=0 old auid=4294967295 new auid=848\ntype=SYSCALL msg=audit(1143146623.875:143): arch=c000003e syscall=188 success=yes exit=0 a0=7fffffa9a9f0 a1=3958d11333 a2=5131f0 a3=20 items=1 pid=2027 auid=848 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=tty3 comm=\"login\" exe=\"/bin/login\" subj=system_u:system_r:local_login_t:s0-s0:c0.c255\n",
+ "type=USER_LOGIN msg=audit(1143146623.879:146): user pid=2027 uid=0 auid=848 msg=\'uid=848: exe=\"/bin/login\" (hostname=?, addr=?, terminal=tty3 res=success)\'\n",
+ ]
+-files = ["%s%s" % (srcdir,"/test.log"), "%s%s" % (srcdir,"/test2.log")]
++files = ["%s%s" % (srcdir,"/test2.log"), "%s%s" % (srcdir,"/test.log")]
+ 
+ import sys
+ import time
+diff --git a/auparse/test/auparse_test.ref b/auparse/test/auparse_test.ref
+index d487945f..dbeddf22 100644
+--- a/auparse/test/auparse_test.ref
++++ b/auparse/test/auparse_test.ref
+@@ -179,19 +179,61 @@ event 3 has 1 records
+         terminal=cron (cron)
+         res=success (success)
+ 
+-event 4 has 1 records
+-    record 1 of type 1006(LOGIN) has 5 fields
++event 4 has 3 records
++    record 1 of type 1006(LOGIN) has 10 fields
+     line=7 file=./test.log
+     event time: 1170021601.343:296, host=?
+         type=LOGIN (LOGIN)
+-        pid=13015 (13015)
++        pid=2288 (2288)
+         uid=0 (root)
+-        auid=4294967295 (unset)
+-        auid=0 (root)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        old-auid=4294967295 (unset)
++        auid=42 (gdm)
++        tty=(none) ((none))
++        old-ses=4294967295 (4294967295)
++        ses=1 (1)
++        res=1 (yes)
++
++    record 2 of type 1300(SYSCALL) has 27 fields
++    line=8 file=./test.log
++    event time: 1170021601.343:296, host=?
++        type=SYSCALL (SYSCALL)
++        arch=c000003e (x86_64)
++        syscall=1 (write)
++        success=yes (yes)
++        exit=2 (2)
++        a0=8 (0x8)
++        a1=7fffa7aede20 (0x7fffa7aede20)
++        a2=2 (0x2)
++        a3=0 (0x0)
++        items=0 (0)
++        ppid=1 (1)
++        pid=2288 (2288)
++        auid=42 (gdm)
++        uid=0 (root)
++        gid=0 (root)
++        euid=0 (root)
++        suid=0 (root)
++        fsuid=0 (root)
++        egid=0 (root)
++        sgid=0 (root)
++        fsgid=0 (root)
++        tty=(none) ((none))
++        ses=1 (1)
++        comm="(systemd)" ((systemd))
++        exe="/usr/lib/systemd/systemd" (/usr/lib/systemd/systemd)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        key=(null) ((null))
++
++    record 3 of type 1327(PROCTITLE) has 2 fields
++    line=9 file=./test.log
++    event time: 1170021601.343:296, host=?
++        type=PROCTITLE (PROCTITLE)
++        proctitle="(systemd)" ((systemd))
+ 
+ event 5 has 1 records
+     record 1 of type 1105(USER_START) has 11 fields
+-    line=8 file=./test.log
++    line=10 file=./test.log
+     event time: 1170021601.344:297, host=?
+         type=USER_START (USER_START)
+         pid=13015 (13015)
+@@ -207,7 +249,7 @@ event 5 has 1 records
+ 
+ event 6 has 1 records
+     record 1 of type 1104(CRED_DISP) has 11 fields
+-    line=9 file=./test.log
++    line=11 file=./test.log
+     event time: 1170021601.364:298, host=?
+         type=CRED_DISP (CRED_DISP)
+         pid=13015 (13015)
+@@ -223,7 +265,7 @@ event 6 has 1 records
+ 
+ event 7 has 1 records
+     record 1 of type 1106(USER_END) has 11 fields
+-    line=10 file=./test.log
++    line=12 file=./test.log
+     event time: 1170021601.366:299, host=?
+         type=USER_END (USER_END)
+         pid=13015 (13015)
+@@ -242,11 +284,11 @@ Test 4 Done
+ Starting Test 5, walk events, records of 2 files...
+ event 1 has 4 records
+     record 1 of type 1400(AVC) has 11 fields
+-    line=1 file=test.log
+-    event time: 1170021493.977:293, host=?
++    line=1 file=test2.log
++    event time: 1170021493.977:283, host=?
+         type=AVC (AVC)
+         seresult=denied (denied)
+-        seperms=read,write (read,write)
++        seperms=read (read)
+         pid=13010 (13010)
+         comm="pickup" (pickup)
+         name="maildrop" (maildrop)
+@@ -257,8 +299,8 @@ event 1 has 4 records
+         tclass=dir (dir)
+ 
+     record 2 of type 1300(SYSCALL) has 26 fields
+-    line=2 file=test.log
+-    event time: 1170021493.977:293, host=?
++    line=2 file=test2.log
++    event time: 1170021493.977:283, host=?
+         type=SYSCALL (SYSCALL)
+         arch=c000003e (x86_64)
+         syscall=2 (open)
+@@ -287,14 +329,14 @@ event 1 has 4 records
+         key=(null) ((null))
+ 
+     record 3 of type 1307(CWD) has 2 fields
+-    line=3 file=test.log
+-    event time: 1170021493.977:293, host=?
++    line=3 file=test2.log
++    event time: 1170021493.977:283, host=?
+         type=CWD (CWD)
+         cwd="/var/spool/postfix" (/var/spool/postfix)
+ 
+     record 4 of type 1302(PATH) has 10 fields
+-    line=4 file=test.log
+-    event time: 1170021493.977:293, host=?
++    line=4 file=test2.log
++    event time: 1170021493.977:283, host=?
+         type=PATH (PATH)
+         item=0 (0)
+         name="maildrop" (maildrop)
+@@ -308,8 +350,8 @@ event 1 has 4 records
+ 
+ event 2 has 1 records
+     record 1 of type 1101(USER_ACCT) has 11 fields
+-    line=5 file=test.log
+-    event time: 1170021601.340:294, host=?
++    line=5 file=test2.log
++    event time: 1170021601.340:284, host=?
+         type=USER_ACCT (USER_ACCT)
+         pid=13015 (13015)
+         uid=0 (root)
+@@ -324,8 +366,8 @@ event 2 has 1 records
+ 
+ event 3 has 1 records
+     record 1 of type 1103(CRED_ACQ) has 11 fields
+-    line=6 file=test.log
+-    event time: 1170021601.342:295, host=?
++    line=6 file=test2.log
++    event time: 1170021601.342:285, host=?
+         type=CRED_ACQ (CRED_ACQ)
+         pid=13015 (13015)
+         uid=0 (root)
+@@ -338,20 +380,62 @@ event 3 has 1 records
+         terminal=cron (cron)
+         res=success (success)
+ 
+-event 4 has 1 records
+-    record 1 of type 1006(LOGIN) has 5 fields
+-    line=7 file=test.log
+-    event time: 1170021601.343:296, host=?
++event 4 has 3 records
++    record 1 of type 1006(LOGIN) has 10 fields
++    line=7 file=test2.log
++    event time: 1170021601.343:286, host=?
+         type=LOGIN (LOGIN)
+-        pid=13015 (13015)
++        pid=2288 (2288)
+         uid=0 (root)
+-        auid=4294967295 (unset)
+-        auid=0 (root)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        old-auid=4294967295 (unset)
++        auid=42 (gdm)
++        tty=(none) ((none))
++        old-ses=4294967295 (4294967295)
++        ses=1 (1)
++        res=1 (yes)
++
++    record 2 of type 1300(SYSCALL) has 27 fields
++    line=8 file=test2.log
++    event time: 1170021601.343:286, host=?
++        type=SYSCALL (SYSCALL)
++        arch=c000003e (x86_64)
++        syscall=1 (write)
++        success=yes (yes)
++        exit=2 (2)
++        a0=8 (0x8)
++        a1=7fffa7aede20 (0x7fffa7aede20)
++        a2=2 (0x2)
++        a3=0 (0x0)
++        items=0 (0)
++        ppid=1 (1)
++        pid=2288 (2288)
++        auid=42 (gdm)
++        uid=0 (root)
++        gid=0 (root)
++        euid=0 (root)
++        suid=0 (root)
++        fsuid=0 (root)
++        egid=0 (root)
++        sgid=0 (root)
++        fsgid=0 (root)
++        tty=(none) ((none))
++        ses=1 (1)
++        comm="(systemd)" ((systemd))
++        exe="/usr/lib/systemd/systemd" (/usr/lib/systemd/systemd)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        key=(null) ((null))
++
++    record 3 of type 1327(PROCTITLE) has 2 fields
++    line=9 file=test2.log
++    event time: 1170021601.343:286, host=?
++        type=PROCTITLE (PROCTITLE)
++        proctitle="(systemd)" ((systemd))
+ 
+ event 5 has 1 records
+     record 1 of type 1105(USER_START) has 11 fields
+-    line=8 file=test.log
+-    event time: 1170021601.344:297, host=?
++    line=10 file=test2.log
++    event time: 1170021601.344:287, host=?
+         type=USER_START (USER_START)
+         pid=13015 (13015)
+         uid=0 (root)
+@@ -366,8 +450,8 @@ event 5 has 1 records
+ 
+ event 6 has 1 records
+     record 1 of type 1104(CRED_DISP) has 11 fields
+-    line=9 file=test.log
+-    event time: 1170021601.364:298, host=?
++    line=11 file=test2.log
++    event time: 1170021601.364:288, host=?
+         type=CRED_DISP (CRED_DISP)
+         pid=13015 (13015)
+         uid=0 (root)
+@@ -382,8 +466,8 @@ event 6 has 1 records
+ 
+ event 7 has 1 records
+     record 1 of type 1106(USER_END) has 11 fields
+-    line=10 file=test.log
+-    event time: 1170021601.366:299, host=?
++    line=12 file=test2.log
++    event time: 1170021601.366:289, host=?
+         type=USER_END (USER_END)
+         pid=13015 (13015)
+         uid=0 (root)
+@@ -398,11 +482,11 @@ event 7 has 1 records
+ 
+ event 8 has 4 records
+     record 1 of type 1400(AVC) has 11 fields
+-    line=1 file=test2.log
++    line=1 file=test.log
+     event time: 1170021493.977:293, host=?
+         type=AVC (AVC)
+         seresult=denied (denied)
+-        seperms=read (read)
++        seperms=read,write (read,write)
+         pid=13010 (13010)
+         comm="pickup" (pickup)
+         name="maildrop" (maildrop)
+@@ -413,7 +497,7 @@ event 8 has 4 records
+         tclass=dir (dir)
+ 
+     record 2 of type 1300(SYSCALL) has 26 fields
+-    line=2 file=test2.log
++    line=2 file=test.log
+     event time: 1170021493.977:293, host=?
+         type=SYSCALL (SYSCALL)
+         arch=c000003e (x86_64)
+@@ -443,13 +527,13 @@ event 8 has 4 records
+         key=(null) ((null))
+ 
+     record 3 of type 1307(CWD) has 2 fields
+-    line=3 file=test2.log
++    line=3 file=test.log
+     event time: 1170021493.977:293, host=?
+         type=CWD (CWD)
+         cwd="/var/spool/postfix" (/var/spool/postfix)
+ 
+     record 4 of type 1302(PATH) has 10 fields
+-    line=4 file=test2.log
++    line=4 file=test.log
+     event time: 1170021493.977:293, host=?
+         type=PATH (PATH)
+         item=0 (0)
+@@ -464,7 +548,7 @@ event 8 has 4 records
+ 
+ event 9 has 1 records
+     record 1 of type 1101(USER_ACCT) has 11 fields
+-    line=5 file=test2.log
++    line=5 file=test.log
+     event time: 1170021601.340:294, host=?
+         type=USER_ACCT (USER_ACCT)
+         pid=13015 (13015)
+@@ -480,7 +564,7 @@ event 9 has 1 records
+ 
+ event 10 has 1 records
+     record 1 of type 1103(CRED_ACQ) has 11 fields
+-    line=6 file=test2.log
++    line=6 file=test.log
+     event time: 1170021601.342:295, host=?
+         type=CRED_ACQ (CRED_ACQ)
+         pid=13015 (13015)
+@@ -494,19 +578,61 @@ event 10 has 1 records
+         terminal=cron (cron)
+         res=success (success)
+ 
+-event 11 has 1 records
+-    record 1 of type 1006(LOGIN) has 5 fields
+-    line=7 file=test2.log
++event 11 has 3 records
++    record 1 of type 1006(LOGIN) has 10 fields
++    line=7 file=test.log
+     event time: 1170021601.343:296, host=?
+         type=LOGIN (LOGIN)
+-        pid=13015 (13015)
++        pid=2288 (2288)
+         uid=0 (root)
+-        auid=4294967295 (unset)
+-        auid=0 (root)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        old-auid=4294967295 (unset)
++        auid=42 (gdm)
++        tty=(none) ((none))
++        old-ses=4294967295 (4294967295)
++        ses=1 (1)
++        res=1 (yes)
++
++    record 2 of type 1300(SYSCALL) has 27 fields
++    line=8 file=test.log
++    event time: 1170021601.343:296, host=?
++        type=SYSCALL (SYSCALL)
++        arch=c000003e (x86_64)
++        syscall=1 (write)
++        success=yes (yes)
++        exit=2 (2)
++        a0=8 (0x8)
++        a1=7fffa7aede20 (0x7fffa7aede20)
++        a2=2 (0x2)
++        a3=0 (0x0)
++        items=0 (0)
++        ppid=1 (1)
++        pid=2288 (2288)
++        auid=42 (gdm)
++        uid=0 (root)
++        gid=0 (root)
++        euid=0 (root)
++        suid=0 (root)
++        fsuid=0 (root)
++        egid=0 (root)
++        sgid=0 (root)
++        fsgid=0 (root)
++        tty=(none) ((none))
++        ses=1 (1)
++        comm="(systemd)" ((systemd))
++        exe="/usr/lib/systemd/systemd" (/usr/lib/systemd/systemd)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        key=(null) ((null))
++
++    record 3 of type 1327(PROCTITLE) has 2 fields
++    line=9 file=test.log
++    event time: 1170021601.343:296, host=?
++        type=PROCTITLE (PROCTITLE)
++        proctitle="(systemd)" ((systemd))
+ 
+ event 12 has 1 records
+     record 1 of type 1105(USER_START) has 11 fields
+-    line=8 file=test2.log
++    line=10 file=test.log
+     event time: 1170021601.344:297, host=?
+         type=USER_START (USER_START)
+         pid=13015 (13015)
+@@ -522,7 +648,7 @@ event 12 has 1 records
+ 
+ event 13 has 1 records
+     record 1 of type 1104(CRED_DISP) has 11 fields
+-    line=9 file=test2.log
++    line=11 file=test.log
+     event time: 1170021601.364:298, host=?
+         type=CRED_DISP (CRED_DISP)
+         pid=13015 (13015)
+@@ -538,7 +664,7 @@ event 13 has 1 records
+ 
+ event 14 has 1 records
+     record 1 of type 1106(USER_END) has 11 fields
+-    line=10 file=test2.log
++    line=12 file=test.log
+     event time: 1170021601.366:299, host=?
+         type=USER_END (USER_END)
+         pid=13015 (13015)
+@@ -573,7 +699,7 @@ Test 6 Done
+ 
+ Starting Test 7, compound search...
+ Found type = USER_START
+-Found auid = 0
++Found auid = 42
+ Test 7 Done
+ 
+ Starting Test 8, regex search...
+@@ -739,19 +865,61 @@ event 3 has 1 records
+         terminal=cron (cron)
+         res=success (success)
+ 
+-event 4 has 1 records
+-    record 1 of type 1006(LOGIN) has 5 fields
++event 4 has 3 records
++    record 1 of type 1006(LOGIN) has 10 fields
+     line=7 file=None
+     event time: 1170021601.343:296, host=?
+         type=LOGIN (LOGIN)
+-        pid=13015 (13015)
++        pid=2288 (2288)
+         uid=0 (root)
+-        auid=4294967295 (unset)
+-        auid=0 (root)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        old-auid=4294967295 (unset)
++        auid=42 (gdm)
++        tty=(none) ((none))
++        old-ses=4294967295 (4294967295)
++        ses=1 (1)
++        res=1 (yes)
++
++    record 2 of type 1300(SYSCALL) has 27 fields
++    line=8 file=None
++    event time: 1170021601.343:296, host=?
++        type=SYSCALL (SYSCALL)
++        arch=c000003e (x86_64)
++        syscall=1 (write)
++        success=yes (yes)
++        exit=2 (2)
++        a0=8 (0x8)
++        a1=7fffa7aede20 (0x7fffa7aede20)
++        a2=2 (0x2)
++        a3=0 (0x0)
++        items=0 (0)
++        ppid=1 (1)
++        pid=2288 (2288)
++        auid=42 (gdm)
++        uid=0 (root)
++        gid=0 (root)
++        euid=0 (root)
++        suid=0 (root)
++        fsuid=0 (root)
++        egid=0 (root)
++        sgid=0 (root)
++        fsgid=0 (root)
++        tty=(none) ((none))
++        ses=1 (1)
++        comm="(systemd)" ((systemd))
++        exe="/usr/lib/systemd/systemd" (/usr/lib/systemd/systemd)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        key=(null) ((null))
++
++    record 3 of type 1327(PROCTITLE) has 2 fields
++    line=9 file=None
++    event time: 1170021601.343:296, host=?
++        type=PROCTITLE (PROCTITLE)
++        proctitle="(systemd)" ((systemd))
+ 
+ event 5 has 1 records
+     record 1 of type 1105(USER_START) has 11 fields
+-    line=8 file=None
++    line=10 file=None
+     event time: 1170021601.344:297, host=?
+         type=USER_START (USER_START)
+         pid=13015 (13015)
+@@ -767,7 +935,7 @@ event 5 has 1 records
+ 
+ event 6 has 1 records
+     record 1 of type 1104(CRED_DISP) has 11 fields
+-    line=9 file=None
++    line=11 file=None
+     event time: 1170021601.364:298, host=?
+         type=CRED_DISP (CRED_DISP)
+         pid=13015 (13015)
+@@ -783,7 +951,7 @@ event 6 has 1 records
+ 
+ event 7 has 1 records
+     record 1 of type 1106(USER_END) has 11 fields
+-    line=10 file=None
++    line=12 file=None
+     event time: 1170021601.366:299, host=?
+         type=USER_END (USER_END)
+         pid=13015 (13015)
+diff --git a/auparse/test/auparse_test.ref.py b/auparse/test/auparse_test.ref.py
+index 028b1b1f..83dc47ad 100644
+--- a/auparse/test/auparse_test.ref.py
++++ b/auparse/test/auparse_test.ref.py
+@@ -171,19 +171,61 @@ event 3 has 1 records
+         terminal=cron (cron)
+         res=success (success)
+ 
+-event 4 has 1 records
+-    record 1 of type 1006(LOGIN) has 5 fields
++event 4 has 3 records
++    record 1 of type 1006(LOGIN) has 10 fields
+     line=7 file=test.log
+     event time: 1170021601.343:296, host=(null)
+         type=LOGIN (LOGIN)
+-        pid=13015 (13015)
++        pid=2288 (2288)
+         uid=0 (root)
+-        auid=4294967295 (unset)
+-        auid=0 (root)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        old-auid=4294967295 (unset)
++        auid=42 (gdm)
++        tty=(none) ((none))
++        old-ses=4294967295 (4294967295)
++        ses=1 (1)
++        res=1 (yes)
++
++    record 2 of type 1300(SYSCALL) has 27 fields
++    line=8 file=test.log
++    event time: 1170021601.343:296, host=(null)
++        type=SYSCALL (SYSCALL)
++        arch=c000003e (x86_64)
++        syscall=1 (write)
++        success=yes (yes)
++        exit=2 (2)
++        a0=8 (0x8)
++        a1=7fffa7aede20 (0x7fffa7aede20)
++        a2=2 (0x2)
++        a3=0 (0x0)
++        items=0 (0)
++        ppid=1 (1)
++        pid=2288 (2288)
++        auid=42 (gdm)
++        uid=0 (root)
++        gid=0 (root)
++        euid=0 (root)
++        suid=0 (root)
++        fsuid=0 (root)
++        egid=0 (root)
++        sgid=0 (root)
++        fsgid=0 (root)
++        tty=(none) ((none))
++        ses=1 (1)
++        comm="(systemd)" ((systemd))
++        exe="/usr/lib/systemd/systemd" (/usr/lib/systemd/systemd)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        key=(null) ((null))
++
++    record 3 of type 1327(PROCTITLE) has 2 fields
++    line=9 file=test.log
++    event time: 1170021601.343:296, host=(null)
++        type=PROCTITLE (PROCTITLE)
++        proctitle="(systemd)" ((systemd))
+ 
+ event 5 has 1 records
+     record 1 of type 1105(USER_START) has 11 fields
+-    line=8 file=test.log
++    line=10 file=test.log
+     event time: 1170021601.344:297, host=(null)
+         type=USER_START (USER_START)
+         pid=13015 (13015)
+@@ -199,7 +241,7 @@ event 5 has 1 records
+ 
+ event 6 has 1 records
+     record 1 of type 1104(CRED_DISP) has 11 fields
+-    line=9 file=test.log
++    line=11 file=test.log
+     event time: 1170021601.364:298, host=(null)
+         type=CRED_DISP (CRED_DISP)
+         pid=13015 (13015)
+@@ -215,7 +257,7 @@ event 6 has 1 records
+ 
+ event 7 has 1 records
+     record 1 of type 1106(USER_END) has 11 fields
+-    line=10 file=test.log
++    line=12 file=test.log
+     event time: 1170021601.366:299, host=(null)
+         type=USER_END (USER_END)
+         pid=13015 (13015)
+@@ -234,11 +276,11 @@ Test 4 Done
+ Starting Test 5, walk events, records of 2 files...
+ event 1 has 4 records
+     record 1 of type 1400(AVC) has 11 fields
+-    line=1 file=test.log
+-    event time: 1170021493.977:293, host=(null)
++    line=1 file=test2.log
++    event time: 1170021493.977:283, host=(null)
+         type=AVC (AVC)
+         seresult=denied (denied)
+-        seperms=read,write (read,write)
++        seperms=read (read)
+         pid=13010 (13010)
+         comm="pickup" (pickup)
+         name="maildrop" (maildrop)
+@@ -249,8 +291,8 @@ event 1 has 4 records
+         tclass=dir (dir)
+ 
+     record 2 of type 1300(SYSCALL) has 26 fields
+-    line=2 file=test.log
+-    event time: 1170021493.977:293, host=(null)
++    line=2 file=test2.log
++    event time: 1170021493.977:283, host=(null)
+         type=SYSCALL (SYSCALL)
+         arch=c000003e (x86_64)
+         syscall=2 (open)
+@@ -279,14 +321,14 @@ event 1 has 4 records
+         key=(null) ((null))
+ 
+     record 3 of type 1307(CWD) has 2 fields
+-    line=3 file=test.log
+-    event time: 1170021493.977:293, host=(null)
++    line=3 file=test2.log
++    event time: 1170021493.977:283, host=(null)
+         type=CWD (CWD)
+         cwd="/var/spool/postfix" (/var/spool/postfix)
+ 
+     record 4 of type 1302(PATH) has 10 fields
+-    line=4 file=test.log
+-    event time: 1170021493.977:293, host=(null)
++    line=4 file=test2.log
++    event time: 1170021493.977:283, host=(null)
+         type=PATH (PATH)
+         item=0 (0)
+         name="maildrop" (maildrop)
+@@ -300,8 +342,8 @@ event 1 has 4 records
+ 
+ event 2 has 1 records
+     record 1 of type 1101(USER_ACCT) has 11 fields
+-    line=5 file=test.log
+-    event time: 1170021601.340:294, host=(null)
++    line=5 file=test2.log
++    event time: 1170021601.340:284, host=(null)
+         type=USER_ACCT (USER_ACCT)
+         pid=13015 (13015)
+         uid=0 (root)
+@@ -316,8 +358,8 @@ event 2 has 1 records
+ 
+ event 3 has 1 records
+     record 1 of type 1103(CRED_ACQ) has 11 fields
+-    line=6 file=test.log
+-    event time: 1170021601.342:295, host=(null)
++    line=6 file=test2.log
++    event time: 1170021601.342:285, host=(null)
+         type=CRED_ACQ (CRED_ACQ)
+         pid=13015 (13015)
+         uid=0 (root)
+@@ -330,20 +372,62 @@ event 3 has 1 records
+         terminal=cron (cron)
+         res=success (success)
+ 
+-event 4 has 1 records
+-    record 1 of type 1006(LOGIN) has 5 fields
+-    line=7 file=test.log
+-    event time: 1170021601.343:296, host=(null)
++event 4 has 3 records
++    record 1 of type 1006(LOGIN) has 10 fields
++    line=7 file=test2.log
++    event time: 1170021601.343:286, host=(null)
+         type=LOGIN (LOGIN)
+-        pid=13015 (13015)
++        pid=2288 (2288)
+         uid=0 (root)
+-        auid=4294967295 (unset)
+-        auid=0 (root)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        old-auid=4294967295 (unset)
++        auid=42 (gdm)
++        tty=(none) ((none))
++        old-ses=4294967295 (4294967295)
++        ses=1 (1)
++        res=1 (yes)
++
++    record 2 of type 1300(SYSCALL) has 27 fields
++    line=8 file=test2.log
++    event time: 1170021601.343:286, host=(null)
++        type=SYSCALL (SYSCALL)
++        arch=c000003e (x86_64)
++        syscall=1 (write)
++        success=yes (yes)
++        exit=2 (2)
++        a0=8 (0x8)
++        a1=7fffa7aede20 (0x7fffa7aede20)
++        a2=2 (0x2)
++        a3=0 (0x0)
++        items=0 (0)
++        ppid=1 (1)
++        pid=2288 (2288)
++        auid=42 (gdm)
++        uid=0 (root)
++        gid=0 (root)
++        euid=0 (root)
++        suid=0 (root)
++        fsuid=0 (root)
++        egid=0 (root)
++        sgid=0 (root)
++        fsgid=0 (root)
++        tty=(none) ((none))
++        ses=1 (1)
++        comm="(systemd)" ((systemd))
++        exe="/usr/lib/systemd/systemd" (/usr/lib/systemd/systemd)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        key=(null) ((null))
++
++    record 3 of type 1327(PROCTITLE) has 2 fields
++    line=9 file=test2.log
++    event time: 1170021601.343:286, host=(null)
++        type=PROCTITLE (PROCTITLE)
++        proctitle="(systemd)" ((systemd))
+ 
+ event 5 has 1 records
+     record 1 of type 1105(USER_START) has 11 fields
+-    line=8 file=test.log
+-    event time: 1170021601.344:297, host=(null)
++    line=10 file=test2.log
++    event time: 1170021601.344:287, host=(null)
+         type=USER_START (USER_START)
+         pid=13015 (13015)
+         uid=0 (root)
+@@ -358,8 +442,8 @@ event 5 has 1 records
+ 
+ event 6 has 1 records
+     record 1 of type 1104(CRED_DISP) has 11 fields
+-    line=9 file=test.log
+-    event time: 1170021601.364:298, host=(null)
++    line=11 file=test2.log
++    event time: 1170021601.364:288, host=(null)
+         type=CRED_DISP (CRED_DISP)
+         pid=13015 (13015)
+         uid=0 (root)
+@@ -374,8 +458,8 @@ event 6 has 1 records
+ 
+ event 7 has 1 records
+     record 1 of type 1106(USER_END) has 11 fields
+-    line=10 file=test.log
+-    event time: 1170021601.366:299, host=(null)
++    line=12 file=test2.log
++    event time: 1170021601.366:289, host=(null)
+         type=USER_END (USER_END)
+         pid=13015 (13015)
+         uid=0 (root)
+@@ -390,11 +474,11 @@ event 7 has 1 records
+ 
+ event 8 has 4 records
+     record 1 of type 1400(AVC) has 11 fields
+-    line=1 file=test2.log
++    line=1 file=test.log
+     event time: 1170021493.977:293, host=(null)
+         type=AVC (AVC)
+         seresult=denied (denied)
+-        seperms=read (read)
++        seperms=read,write (read,write)
+         pid=13010 (13010)
+         comm="pickup" (pickup)
+         name="maildrop" (maildrop)
+@@ -405,7 +489,7 @@ event 8 has 4 records
+         tclass=dir (dir)
+ 
+     record 2 of type 1300(SYSCALL) has 26 fields
+-    line=2 file=test2.log
++    line=2 file=test.log
+     event time: 1170021493.977:293, host=(null)
+         type=SYSCALL (SYSCALL)
+         arch=c000003e (x86_64)
+@@ -435,13 +519,13 @@ event 8 has 4 records
+         key=(null) ((null))
+ 
+     record 3 of type 1307(CWD) has 2 fields
+-    line=3 file=test2.log
++    line=3 file=test.log
+     event time: 1170021493.977:293, host=(null)
+         type=CWD (CWD)
+         cwd="/var/spool/postfix" (/var/spool/postfix)
+ 
+     record 4 of type 1302(PATH) has 10 fields
+-    line=4 file=test2.log
++    line=4 file=test.log
+     event time: 1170021493.977:293, host=(null)
+         type=PATH (PATH)
+         item=0 (0)
+@@ -456,7 +540,7 @@ event 8 has 4 records
+ 
+ event 9 has 1 records
+     record 1 of type 1101(USER_ACCT) has 11 fields
+-    line=5 file=test2.log
++    line=5 file=test.log
+     event time: 1170021601.340:294, host=(null)
+         type=USER_ACCT (USER_ACCT)
+         pid=13015 (13015)
+@@ -472,7 +556,7 @@ event 9 has 1 records
+ 
+ event 10 has 1 records
+     record 1 of type 1103(CRED_ACQ) has 11 fields
+-    line=6 file=test2.log
++    line=6 file=test.log
+     event time: 1170021601.342:295, host=(null)
+         type=CRED_ACQ (CRED_ACQ)
+         pid=13015 (13015)
+@@ -486,19 +570,61 @@ event 10 has 1 records
+         terminal=cron (cron)
+         res=success (success)
+ 
+-event 11 has 1 records
+-    record 1 of type 1006(LOGIN) has 5 fields
+-    line=7 file=test2.log
++event 11 has 3 records
++    record 1 of type 1006(LOGIN) has 10 fields
++    line=7 file=test.log
+     event time: 1170021601.343:296, host=(null)
+         type=LOGIN (LOGIN)
+-        pid=13015 (13015)
++        pid=2288 (2288)
+         uid=0 (root)
+-        auid=4294967295 (unset)
+-        auid=0 (root)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        old-auid=4294967295 (unset)
++        auid=42 (gdm)
++        tty=(none) ((none))
++        old-ses=4294967295 (4294967295)
++        ses=1 (1)
++        res=1 (yes)
++
++    record 2 of type 1300(SYSCALL) has 27 fields
++    line=8 file=test.log
++    event time: 1170021601.343:296, host=(null)
++        type=SYSCALL (SYSCALL)
++        arch=c000003e (x86_64)
++        syscall=1 (write)
++        success=yes (yes)
++        exit=2 (2)
++        a0=8 (0x8)
++        a1=7fffa7aede20 (0x7fffa7aede20)
++        a2=2 (0x2)
++        a3=0 (0x0)
++        items=0 (0)
++        ppid=1 (1)
++        pid=2288 (2288)
++        auid=42 (gdm)
++        uid=0 (root)
++        gid=0 (root)
++        euid=0 (root)
++        suid=0 (root)
++        fsuid=0 (root)
++        egid=0 (root)
++        sgid=0 (root)
++        fsgid=0 (root)
++        tty=(none) ((none))
++        ses=1 (1)
++        comm="(systemd)" ((systemd))
++        exe="/usr/lib/systemd/systemd" (/usr/lib/systemd/systemd)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        key=(null) ((null))
++
++    record 3 of type 1327(PROCTITLE) has 2 fields
++    line=9 file=test.log
++    event time: 1170021601.343:296, host=(null)
++        type=PROCTITLE (PROCTITLE)
++        proctitle="(systemd)" ((systemd))
+ 
+ event 12 has 1 records
+     record 1 of type 1105(USER_START) has 11 fields
+-    line=8 file=test2.log
++    line=10 file=test.log
+     event time: 1170021601.344:297, host=(null)
+         type=USER_START (USER_START)
+         pid=13015 (13015)
+@@ -514,7 +640,7 @@ event 12 has 1 records
+ 
+ event 13 has 1 records
+     record 1 of type 1104(CRED_DISP) has 11 fields
+-    line=9 file=test2.log
++    line=11 file=test.log
+     event time: 1170021601.364:298, host=(null)
+         type=CRED_DISP (CRED_DISP)
+         pid=13015 (13015)
+@@ -530,7 +656,7 @@ event 13 has 1 records
+ 
+ event 14 has 1 records
+     record 1 of type 1106(USER_END) has 11 fields
+-    line=10 file=test2.log
++    line=12 file=test.log
+     event time: 1170021601.366:299, host=(null)
+         type=USER_END (USER_END)
+         pid=13015 (13015)
+@@ -565,7 +691,7 @@ Test 6 Done
+ 
+ Starting Test 7, compound search...
+ Found type = USER_START
+-Found auid = 0
++Found auid = 42
+ Test 7 Done
+ 
+ Starting Test 8, regex search...
+@@ -729,19 +855,61 @@ event 3 has 1 records
+         terminal=cron (cron)
+         res=success (success)
+ 
+-event 4 has 1 records
+-    record 1 of type 1006(LOGIN) has 5 fields
++event 4 has 3 records
++    record 1 of type 1006(LOGIN) has 10 fields
+     line=7 file=None
+     event time: 1170021601.343:296, host=(null)
+         type=LOGIN (LOGIN)
+-        pid=13015 (13015)
++        pid=2288 (2288)
+         uid=0 (root)
+-        auid=4294967295 (unset)
+-        auid=0 (root)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        old-auid=4294967295 (unset)
++        auid=42 (gdm)
++        tty=(none) ((none))
++        old-ses=4294967295 (4294967295)
++        ses=1 (1)
++        res=1 (yes)
++
++    record 2 of type 1300(SYSCALL) has 27 fields
++    line=8 file=None
++    event time: 1170021601.343:296, host=(null)
++        type=SYSCALL (SYSCALL)
++        arch=c000003e (x86_64)
++        syscall=1 (write)
++        success=yes (yes)
++        exit=2 (2)
++        a0=8 (0x8)
++        a1=7fffa7aede20 (0x7fffa7aede20)
++        a2=2 (0x2)
++        a3=0 (0x0)
++        items=0 (0)
++        ppid=1 (1)
++        pid=2288 (2288)
++        auid=42 (gdm)
++        uid=0 (root)
++        gid=0 (root)
++        euid=0 (root)
++        suid=0 (root)
++        fsuid=0 (root)
++        egid=0 (root)
++        sgid=0 (root)
++        fsgid=0 (root)
++        tty=(none) ((none))
++        ses=1 (1)
++        comm="(systemd)" ((systemd))
++        exe="/usr/lib/systemd/systemd" (/usr/lib/systemd/systemd)
++        subj=system_u:system_r:init_t:s0 (system_u:system_r:init_t:s0)
++        key=(null) ((null))
++
++    record 3 of type 1327(PROCTITLE) has 2 fields
++    line=9 file=None
++    event time: 1170021601.343:296, host=(null)
++        type=PROCTITLE (PROCTITLE)
++        proctitle="(systemd)" ((systemd))
+ 
+ event 5 has 1 records
+     record 1 of type 1105(USER_START) has 11 fields
+-    line=8 file=None
++    line=10 file=None
+     event time: 1170021601.344:297, host=(null)
+         type=USER_START (USER_START)
+         pid=13015 (13015)
+@@ -757,7 +925,7 @@ event 5 has 1 records
+ 
+ event 6 has 1 records
+     record 1 of type 1104(CRED_DISP) has 11 fields
+-    line=9 file=None
++    line=11 file=None
+     event time: 1170021601.364:298, host=(null)
+         type=CRED_DISP (CRED_DISP)
+         pid=13015 (13015)
+@@ -773,7 +941,7 @@ event 6 has 1 records
+ 
+ event 7 has 1 records
+     record 1 of type 1106(USER_END) has 11 fields
+-    line=10 file=None
++    line=12 file=None
+     event time: 1170021601.366:299, host=(null)
+         type=USER_END (USER_END)
+         pid=13015 (13015)
+diff --git a/auparse/test/test.log b/auparse/test/test.log
+index e0ffabf5..cef1838d 100644
+--- a/auparse/test/test.log
++++ b/auparse/test/test.log
+@@ -4,7 +4,9 @@ type=CWD msg=audit(1170021493.977:293):  cwd="/var/spool/postfix"
+ type=PATH msg=audit(1170021493.977:293): item=0 name="maildrop" inode=14911367 dev=03:07 mode=040730 ouid=890 ogid=891 rdev=00:00 obj=system_u:object_r:postfix_spool_maildrop_t:s0
+ type=USER_ACCT msg=audit(1170021601.340:294): user pid=13015 uid=0 auid=4294967295 subj=system_u:system_r:crond_t:s0-s0:c0.c1023 msg='PAM: accounting acct=root : exe="/usr/sbin/crond" hostname=? addr=? terminal=cron res=success'
+ type=CRED_ACQ msg=audit(1170021601.342:295): user pid=13015 uid=0 auid=4294967295 subj=system_u:system_r:crond_t:s0-s0:c0.c1023 msg='PAM: setcred acct=root : exe="/usr/sbin/crond" hostname=? addr=? terminal=cron res=success'
+-type=LOGIN msg=audit(1170021601.343:296): login pid=13015 uid=0 old auid=4294967295 new auid=0
++type=LOGIN msg=audit(1170021601.343:296): pid=2288 uid=0 subj=system_u:system_r:init_t:s0 old-auid=4294967295 auid=42 tty=(none) old-ses=4294967295 ses=1 res=1
++type=SYSCALL msg=audit(1170021601.343:296): arch=c000003e syscall=1 success=yes exit=2 a0=8 a1=7fffa7aede20 a2=2 a3=0 items=0 ppid=1 pid=2288 auid=42 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=1 comm="(systemd)" exe="/usr/lib/systemd/systemd" subj=system_u:system_r:init_t:s0 key=(null)
++type=PROCTITLE msg=audit(1170021601.343:296): proctitle="(systemd)"
+ type=USER_START msg=audit(1170021601.344:297): user pid=13015 uid=0 auid=0 subj=system_u:system_r:crond_t:s0-s0:c0.c1023 msg='PAM: session open acct=root : exe="/usr/sbin/crond" (hostname=?, addr=?, terminal=cron res=success)'
+ type=CRED_DISP msg=audit(1170021601.364:298): user pid=13015 uid=0 auid=0 subj=system_u:system_r:crond_t:s0-s0:c0.c1023 msg='PAM: setcred acct=root : exe="/usr/sbin/crond" (hostname=?, addr=?, terminal=cron res=success)'
+ type=USER_END msg=audit(1170021601.366:299): user pid=13015 uid=0 auid=0 subj=system_u:system_r:crond_t:s0-s0:c0.c1023 msg='PAM: session close acct=root : exe="/usr/sbin/crond" (hostname=?, addr=?, terminal=cron res=success)'
+diff --git a/auparse/test/test2.log b/auparse/test/test2.log
+index 588f1e04..63aadaa9 100644
+--- a/auparse/test/test2.log
++++ b/auparse/test/test2.log
+@@ -1,10 +1,12 @@
+-type=AVC msg=audit(1170021493.977:293): avc:  denied  { read } for  pid=13010 comm="pickup" name="maildrop" dev=hda7 ino=14911367 scontext=system_u:system_r:postfix_pickup_t:s0 tcontext=system_u:object_r:postfix_spool_maildrop_t:s0 tclass=dir
+-type=SYSCALL msg=audit(1170021493.977:293): arch=c000003e syscall=2 success=no exit=-13 a0=5555665d91b0 a1=10800 a2=5555665d91b8 a3=0 items=1 ppid=2013 pid=13010 auid=4294967295 uid=890 gid=890 euid=890 suid=890 fsuid=890 egid=890 sgid=890 fsgid=890 tty=(none) comm="pickup" exe="/usr/libexec/postfix/pickup" subj=system_u:system_r:postfix_pickup_t:s0 key=(null)
+-type=CWD msg=audit(1170021493.977:293):  cwd="/var/spool/postfix"
+-type=PATH msg=audit(1170021493.977:293): item=0 name="maildrop" inode=14911367 dev=03:07 mode=040730 ouid=890 ogid=891 rdev=00:00 obj=system_u:object_r:postfix_spool_maildrop_t:s0
+-type=USER_ACCT msg=audit(1170021601.340:294): user pid=13015 uid=0 auid=4294967295 subj=system_u:system_r:crond_t:s0-s0:c0.c1023 msg='PAM: accounting acct=root : exe="/usr/sbin/crond" hostname=? addr=? terminal=cron res=success'
+-type=CRED_ACQ msg=audit(1170021601.342:295): user pid=13015 uid=0 auid=4294967295 subj=system_u:system_r:crond_t:s0-s0:c0.c1023 msg='PAM: setcred acct=root : exe="/usr/sbin/crond" hostname=? addr=? terminal=cron res=success'
+-type=LOGIN msg=audit(1170021601.343:296): login pid=13015 uid=0 old auid=4294967295 new auid=0
+-type=USER_START msg=audit(1170021601.344:297): user pid=13015 uid=0 auid=0 subj=system_u:system_r:crond_t:s0-s0:c0.c1023 msg='PAM: session open acct=root : exe="/usr/sbin/crond" (hostname=?, addr=?, terminal=cron res=success)'
+-type=CRED_DISP msg=audit(1170021601.364:298): user pid=13015 uid=0 auid=0 subj=system_u:system_r:crond_t:s0-s0:c0.c1023 msg='PAM: setcred acct=root : exe="/usr/sbin/crond" (hostname=?, addr=?, terminal=cron res=success)'
+-type=USER_END msg=audit(1170021601.366:299): user pid=13015 uid=0 auid=0 subj=system_u:system_r:crond_t:s0-s0:c0.c1023 msg='PAM: session close acct=root : exe="/usr/sbin/crond" (hostname=?, addr=?, terminal=cron res=success)'
++type=AVC msg=audit(1170021493.977:283): avc:  denied  { read } for  pid=13010 comm="pickup" name="maildrop" dev=hda7 ino=14911367 scontext=system_u:system_r:postfix_pickup_t:s0 tcontext=system_u:object_r:postfix_spool_maildrop_t:s0 tclass=dir
++type=SYSCALL msg=audit(1170021493.977:283): arch=c000003e syscall=2 success=no exit=-13 a0=5555665d91b0 a1=10800 a2=5555665d91b8 a3=0 items=1 ppid=2013 pid=13010 auid=4294967295 uid=890 gid=890 euid=890 suid=890 fsuid=890 egid=890 sgid=890 fsgid=890 tty=(none) comm="pickup" exe="/usr/libexec/postfix/pickup" subj=system_u:system_r:postfix_pickup_t:s0 key=(null)
++type=CWD msg=audit(1170021493.977:283):  cwd="/var/spool/postfix"
++type=PATH msg=audit(1170021493.977:283): item=0 name="maildrop" inode=14911367 dev=03:07 mode=040730 ouid=890 ogid=891 rdev=00:00 obj=system_u:object_r:postfix_spool_maildrop_t:s0
++type=USER_ACCT msg=audit(1170021601.340:284): user pid=13015 uid=0 auid=4294967295 subj=system_u:system_r:crond_t:s0-s0:c0.c1023 msg='PAM: accounting acct=root : exe="/usr/sbin/crond" hostname=? addr=? terminal=cron res=success'
++type=CRED_ACQ msg=audit(1170021601.342:285): user pid=13015 uid=0 auid=4294967295 subj=system_u:system_r:crond_t:s0-s0:c0.c1023 msg='PAM: setcred acct=root : exe="/usr/sbin/crond" hostname=? addr=? terminal=cron res=success'
++type=LOGIN msg=audit(1170021601.343:286): pid=2288 uid=0 subj=system_u:system_r:init_t:s0 old-auid=4294967295 auid=42 tty=(none) old-ses=4294967295 ses=1 res=1
++type=SYSCALL msg=audit(1170021601.343:286): arch=c000003e syscall=1 success=yes exit=2 a0=8 a1=7fffa7aede20 a2=2 a3=0 items=0 ppid=1 pid=2288 auid=42 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=1 comm="(systemd)" exe="/usr/lib/systemd/systemd" subj=system_u:system_r:init_t:s0 key=(null)
++type=PROCTITLE msg=audit(1170021601.343:286): proctitle="(systemd)"
++type=USER_START msg=audit(1170021601.344:287): user pid=13015 uid=0 auid=0 subj=system_u:system_r:crond_t:s0-s0:c0.c1023 msg='PAM: session open acct=root : exe="/usr/sbin/crond" (hostname=?, addr=?, terminal=cron res=success)'
++type=CRED_DISP msg=audit(1170021601.364:288): user pid=13015 uid=0 auid=0 subj=system_u:system_r:crond_t:s0-s0:c0.c1023 msg='PAM: setcred acct=root : exe="/usr/sbin/crond" (hostname=?, addr=?, terminal=cron res=success)'
++type=USER_END msg=audit(1170021601.366:289): user pid=13015 uid=0 auid=0 subj=system_u:system_r:crond_t:s0-s0:c0.c1023 msg='PAM: session close acct=root : exe="/usr/sbin/crond" (hostname=?, addr=?, terminal=cron res=success)'
+-- 
+2.49.0
+
