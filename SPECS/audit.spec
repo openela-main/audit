@@ -2,7 +2,7 @@
 Summary: User space tools for kernel auditing
 Name: audit
 Version: 3.1.5
-Release: 7%{?dist}
+Release: 8%{?dist}
 License: GPLv2+
 URL: http://people.redhat.com/sgrubb/audit/
 Source0: http://people.redhat.com/sgrubb/audit/%{name}-%{version}.tar.gz
@@ -191,15 +191,15 @@ fi
 
 # If upgrading, restart the daemon if it's running
 if [ $1 -eq 2 ]; then
-	state=$(systemctl status auditd | awk '/Active:/ { print $2 }')
+	state=$(systemctl show -P ActiveState auditd)
 
 	if [ $state = "active" ] ; then
 		auditctl --signal stop || true
-		systemctl start auditd
+		systemctl start auditd || true
 	fi
 # if installing, start it since preset says we should be running
 elif [ $1 -eq 1 ]; then
-	systemctl start auditd
+	systemctl start auditd || true
 fi
 
 %preun
@@ -310,6 +310,10 @@ fi
 %attr(750,root,root) %{_sbindir}/audispd-zos-remote
 
 %changelog
+* Tue Jan 06 2026 Attila Lakatos <alakatos@redhat.com> - 3.1.5-8
+- Fix POSTIN scriplet to not fail during upgrade
+  Resolves: RHEL-138696
+
 * Fri Apr 11 2025 Attila Lakatos <alakatos@redhat.com> - 3.1.5-7
 - ausearch-checkpoint race condition fix
   Resolves: RHEL-86897
