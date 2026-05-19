@@ -2,7 +2,7 @@
 Summary: User space tools for kernel auditing
 Name: audit
 Version: 4.0.3
-Release: 4%{?dist}
+Release: 5%{?dist}
 License: GPL-2.0-or-later AND LGPL-2.0-or-later
 URL: https://github.com/linux-audit/audit-userspace/
 Source0: https://github.com/linux-audit/audit-userspace/archive/refs/tags/v%{version}.tar.gz
@@ -162,14 +162,14 @@ if [ -f /run/ostree-booted ] ; then
 fi
 # If an upgrade, restart it if it's running
 if [ $1 -eq 2 ] ; then
-    state=$(systemctl status auditd | awk '/Active:/ { print $2 }')
+    state=$(systemctl show -P ActiveState auditd)
     if [ $state = "active" ] ; then
         auditctl --signal stop || true
-        systemctl start auditd
+        systemctl start auditd || true
     fi
 # if an install, start it since preset says we should be running
 elif [ $1 -eq 1 ] ; then
-        systemctl start auditd
+        systemctl start auditd || true
 fi
 
 %post rules
@@ -315,6 +315,10 @@ fi
 %attr(750,root,root) %{_sbindir}/audispd-zos-remote
 
 %changelog
+* Tue Jan 06 2026 Attila Lakatos <alakatos@redhat.com> - 4.0.3-5
+- Fix POSTIN scriplet to not fail during upgrade
+  Resolves: RHEL-128464
+
 * Fri Apr 11 2025 Attila Lakatos <alakatos@redhat.com> - 4.0.3-4
 - ausearch-checkpoint race condition fix
   Resolves: RHEL-86896
