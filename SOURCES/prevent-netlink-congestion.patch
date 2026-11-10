@@ -1,0 +1,51 @@
+From abea35d2f7837ab4decb341ae7022eb6598211d8 Mon Sep 17 00:00:00 2001
+From: Steve Grubb <ausearch.1@gmail.com>
+Date: Tue, 9 Jun 2026 14:15:41 -0400
+Subject: [PATCH] prevent netlink congestion
+
+Adapted for audit-3.1.5 (c9s).
+
+Upstream: https://github.com/linux-audit/audit-userspace/commit/abea35d2f7837ab4decb341ae7022eb6598211d8
+---
+ src/auditd.c | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/src/auditd.c b/src/auditd.c
+--- a/src/auditd.c
++++ b/src/auditd.c
+@@ -34,6 +34,8 @@
+ #include <sys/time.h>
+ #include <sys/stat.h>
+ #include <sys/wait.h>
++#include <sys/socket.h>
++#include <linux/netlink.h>
+ #include <fcntl.h>
+ #include <pthread.h>
+ #include <sys/utsname.h>
+@@ -600,7 +602,7 @@
+ {
+ 	struct sigaction sa;
+ 	struct rlimit limit;
+-	int i, c, rc;
++	int i, c, rc, one = 1;
+ 	static const struct option opts[] = {
+ 		{"foreground", no_argument, NULL, 'f'},
+ 		{"allow_links", no_argument, NULL, 'l'},
+@@ -755,6 +757,17 @@
+ 		free_config(&config);
+ 		return 1;
+ 	}
++	/* Prevent netlink congestion issues */
++	if (setsockopt(fd, SOL_NETLINK, NETLINK_NO_ENOBUFS,
++			&one, sizeof(one)) < 0) {
++		audit_msg(LOG_ERR,
++			"Cannot set netlink no enobufs option (%s)",
++			strerror(errno));
++		audit_close(fd);
++		tell_parent(FAILURE);
++		free_config(&config);
++		return 1;
++	}
+ 
+ 	/* Init the event handler thread */
+ 	write_pid_file();

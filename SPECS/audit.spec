@@ -2,7 +2,7 @@
 Summary: User space tools for kernel auditing
 Name: audit
 Version: 3.1.5
-Release: 8%{?dist}
+Release: 9%{?dist}
 License: GPLv2+
 URL: http://people.redhat.com/sgrubb/audit/
 Source0: http://people.redhat.com/sgrubb/audit/%{name}-%{version}.tar.gz
@@ -24,6 +24,7 @@ Patch13: end-of-event.patch
 Patch14: end-of-event-check.patch
 Patch15: end-of-event-gdm.patch
 Patch16: ausearch-checkpoint-race.patch
+Patch17: prevent-netlink-congestion.patch
 
 BuildRequires: make gcc swig
 BuildRequires: openldap-devel
@@ -122,6 +123,7 @@ cp %{SOURCE1} .
 %patch -P 14 -p1
 %patch -P 15 -p1
 %patch -P 16 -p1
+%patch -P 17 -p1
 
 autoreconf -fv --install
 
@@ -310,6 +312,10 @@ fi
 %attr(750,root,root) %{_sbindir}/audispd-zos-remote
 
 %changelog
+* Tue Aug 04 2026 Attila Lakatos <alakatos@redhat.com> - 3.1.5-9
+- Backport: prevent netlink congestion
+  Resolves: RHEL-102936
+
 * Tue Jan 06 2026 Attila Lakatos <alakatos@redhat.com> - 3.1.5-8
 - Fix POSTIN scriplet to not fail during upgrade
   Resolves: RHEL-138696
