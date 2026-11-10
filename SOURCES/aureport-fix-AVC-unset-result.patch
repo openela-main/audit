@@ -1,0 +1,71 @@
+From c09f749056ed554d734c0f724a4fff9843cb6a90 Mon Sep 17 00:00:00 2001
+From: Cropi <alakatos@redhat.com>
+Date: Wed, 12 Aug 2026 10:21:24 +0200
+Subject: [PATCH] aureport: fix AVC result always showing "unset" without a
+ success filter
+
+In parse_avc(), two unrelated concerns were bundled under one guard:
+
+  if (event_success != S_UNSET && s->success == S_UNSET) {
+      an.avc_result = AVC_DENIED / AVC_GRANTED;   /* concern 1 */
+      s->success   = S_FAILED  / S_SUCCESS;        /* concern 2 */
+  }
+
+The guard was correct for concern 2: only propagate the AVC verdict to
+s->success when the caller is filtering by success/failure and s->success
+hasn't been set yet (syscall pass/fail is authoritative).
+
+However, it also gated concern 1: populating an.avc_result, which is the
+field aureport -a prints in the "result" column. Without --success or
+--failed on the command line, event_success == S_UNSET, so the block was
+skipped entirely and an.avc_result stayed at its initial AVC_UNSET value.
+aulookup_result(AVC_UNSET) returns "unset", making the result column
+always show "unset" regardless of what the AVC record actually says.
+
+Fix: unconditionally extract the verdict from the record into an.avc_result,
+and move the event_success guard to cover only the s->success assignment.
+
+Signed-off-by: Cropi <alakatos@redhat.com>
+---
+ src/ausearch-parse.c | 22 ++++++++++++----------
+ 1 file changed, 12 insertions(+), 10 deletions(-)
+
+diff --git a/src/ausearch-parse.c b/src/ausearch-parse.c
+index ef1e1b5c..cf2df1d5 100644
+--- a/src/ausearch-parse.c
++++ b/src/ausearch-parse.c
+@@ -2037,19 +2037,21 @@ static int parse_avc(const lnode *n, search_items *s)
+ 			term = n->message;
+ 			goto other_avc;
+ 		}
+-		// Do not override syscall success if already set.
+-		// Syscall pass/fail is the authoritative value.
+-		if (event_success != S_UNSET && s->success == S_UNSET) {
+-			*term = 0;
+-			if (strstr(str, "denied")) {
++		// Always record the AVC verdict (denied/granted) from the record.
++		// Only propagate it to s->success when a success filter is active
++		// and s->success hasn't been set yet; syscall pass/fail is the
++		// authoritative value and must not be overwritten.
++		*term = 0;
++		if (strstr(str, "denied")) {
++			an.avc_result = AVC_DENIED;
++			if (event_success != S_UNSET && s->success == S_UNSET)
+ 				s->success = S_FAILED;
+-				an.avc_result = AVC_DENIED;
+-			} else {
++		} else {
++			an.avc_result = AVC_GRANTED;
++			if (event_success != S_UNSET && s->success == S_UNSET)
+ 				s->success = S_SUCCESS;
+-				an.avc_result = AVC_GRANTED;
+-			}
+-			*term = '{';
+ 		}
++		*term = '{';
+ 
+ 		// Now get permission
+ 		str = term + 1;
+-- 
+2.55.0
+

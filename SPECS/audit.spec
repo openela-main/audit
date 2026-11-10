@@ -1,25 +1,19 @@
-
 Summary: User space tools for kernel auditing
 Name: audit
-Version: 4.0.3
-Release: 5%{?dist}
+Version: 4.2.1
+Release: 3%{?dist}
 License: GPL-2.0-or-later AND LGPL-2.0-or-later
 URL: https://github.com/linux-audit/audit-userspace/
 Source0: https://github.com/linux-audit/audit-userspace/archive/refs/tags/v%{version}.tar.gz
 Source1: https://www.gnu.org/licenses/lgpl-2.1.txt
+Patch0: revert-audit-run-dir.patch
+Patch1: auditd-fix-16-byte-truncation-v1.patch
+Patch2: auditd-fix-16-byte-truncation-v2.patch
+Patch3: aureport-fix-AVC-unset-result.patch
 BuildRequires: make gcc
 BuildRequires: autoconf automake libtool
-BuildRequires: kernel-headers >= 5.0
+BuildRequires: kernel-headers >= 5.15
 BuildRequires: systemd
-
-Patch0: remote-logging-ordering-cycle.patch
-Patch1: timebased-log-rotation.patch
-Patch2: remove-HALT-spaceleftaction.patch
-Patch3: warning-before-HALT.patch
-Patch4: TTY-hostname.patch
-Patch5: permtab-unsupport-syscalls-v1.patch
-Patch6: permtab-unsupport-syscalls-v2.patch
-Patch7: ausearch-checkpoint-race.patch
 
 Requires: %{name}-libs%{?_isa} = %{version}-%{release}
 Recommends: %{name}-rules%{?_isa} = %{version}-%{release}
@@ -51,7 +45,7 @@ applications to use the audit framework.
 Summary: Header files for libaudit
 License: LGPL-2.0-or-later
 Requires: %{name}-libs%{?_isa} = %{version}-%{release}
-Requires: kernel-headers >= 5.0
+Requires: kernel-headers >= 5.15
 
 %description libs-devel
 The audit-libs-devel package contains the header files needed for
@@ -73,7 +67,7 @@ and libauparse can be used by python3.
 %package -n audispd-plugins
 Summary: Plugins for the audit event dispatcher
 License: GPL-2.0-or-later
-BuildRequires: krb5-devel libcap-ng-devel
+BuildRequires: krb5-devel libcap-ng-devel openssl-devel
 Requires: %{name}%{?_isa} = %{version}-%{release}
 Requires: %{name}-libs%{?_isa} = %{version}-%{release}
 
@@ -98,35 +92,28 @@ Management Facility) database, through an IBM Tivoli Directory Server
 %package rules
 Summary: audit rules and utilities
 License: GPL-2.0-or-later
-Recommends: %{name} = %{version}-%{release}
+Requires(post): coreutils gawk grep
 Requires: %{name}-libs%{?_isa} = %{version}-%{release}
+Recommends: %{name} = %{version}-%{release}
 
 %description rules
 The audit rules package contains the rules and utilities to load audit rules.
 
 %prep
 %setup -q -n %{name}-userspace-%{version}
-%patch -P 0 -p1
-%patch -P 1 -p1
-%patch -P 2 -p1
-%patch -P 3 -p1
-%patch -P 4 -p1
-%patch -P 5 -p1
-%patch -P 6 -p1
-%patch -P 7 -p1
 cp %{SOURCE1} .
+%autopatch -p1
 
 %build
 autoreconf -fv --install
 # Remove the ids code, its not ready
 sed -i 's/ ids / /' audisp/plugins/Makefile.am
 sed -i 's/ ids / /' audisp/plugins/Makefile.in
-
-%configure --with-python=no \
-           --with-python3=yes \
+%configure --with-python3=yes \
            --enable-gssapi-krb5=yes --with-arm --with-aarch64 --with-riscv \
            --with-libcap-ng=yes --without-golang --enable-zos-remote \
-           --enable-experimental --with-io_uring
+           --with-io_uring --enable-experimental --with-nftables \
+           --enable-tls
 
 make CFLAGS="%{optflags}" %{?_smp_mflags}
 
@@ -141,6 +128,7 @@ make DESTDIR=$RPM_BUILD_ROOT install
 # Remove these items so they don't get picked up.
 rm -f $RPM_BUILD_ROOT/%{_libdir}/libaudit.a
 rm -f $RPM_BUILD_ROOT/%{_libdir}/libauparse.a
+rm -f $RPM_BUILD_ROOT/%{_libdir}/libauplugin.a
 
 find $RPM_BUILD_ROOT -name '*.la' -delete
 find $RPM_BUILD_ROOT/%{_libdir}/python%{python3_version}/site-packages -name '*.a' -delete || true
@@ -150,7 +138,7 @@ touch -r ./audit.spec $RPM_BUILD_ROOT/etc/libaudit.conf
 touch -r ./audit.spec $RPM_BUILD_ROOT/usr/share/man/man5/libaudit.conf.5.gz
 
 %check
-#make %{?_smp_mflags} check
+make %{?_smp_mflags} check
 # Get rid of make files so that they don't get packaged.
 rm -f rules/Makefile*
 
@@ -214,7 +202,8 @@ fi
 %{!?_licensedir:%global license %%doc}
 %license lgpl-2.1.txt
 %{_libdir}/libaudit.so.1*
-%{_libdir}/libauparse.*
+%{_libdir}/libauparse.so.0*
+%{_libdir}/libauplugin.so.1*
 %config(noreplace) %attr(640,root,root) /etc/libaudit.conf
 %{_mandir}/man5/libaudit.conf.5.gz
 
@@ -222,11 +211,13 @@ fi
 %doc contrib/plugin
 %{_libdir}/libaudit.so
 %{_libdir}/libauparse.so
+%{_libdir}/libauplugin.so
 %{_includedir}/libaudit.h
 %{_includedir}/audit_logging.h
 %{_includedir}/audit-records.h
 %{_includedir}/auparse.h
 %{_includedir}/auparse-defs.h
+%{_includedir}/auplugin.h
 %{_datadir}/aclocal/audit.m4
 %{_libdir}/pkgconfig/audit.pc
 %{_libdir}/pkgconfig/auparse.pc
@@ -247,8 +238,8 @@ fi
 %attr(644,root,root) %{_mandir}/man8/aulastlog.8.gz
 %attr(644,root,root) %{_mandir}/man8/ausyscall.8.gz
 %attr(644,root,root) %{_mandir}/man5/auditd.conf.5.gz
-%attr(644,root,root) %{_mandir}/man5/auditd-plugins.5.gz
 %attr(644,root,root) %{_mandir}/man5/auditd.cron.5.gz
+%attr(644,root,root) %{_mandir}/man5/auditd-plugins.5.gz
 %attr(755,root,root) %{_sbindir}/auditd
 %attr(755,root,root) %{_sbindir}/ausearch
 %attr(755,root,root) %{_sbindir}/aureport
@@ -265,7 +256,12 @@ fi
 %attr(750,root,root) %{_libexecdir}/initscripts/legacy-actions/auditd/rotate
 %attr(750,root,root) %{_libexecdir}/initscripts/legacy-actions/auditd/state
 %attr(750,root,root) %{_libexecdir}/initscripts/legacy-actions/auditd/stop
-%ghost %{_localstatedir}/run/auditd.state
+%{_datadir}/bash-completion/completions/ausearch
+%{_datadir}/bash-completion/completions/aureport
+%attr(644,root,root) %{_datadir}/bash-completion/completions/auditctl
+%{_datadir}/bash-completion/completions/augenrules
+%ghost %attr(0644,root,root) %{_runstatedir}/auditd.pid
+%ghost %attr(0640,root,root) %{_runstatedir}/auditd.state
 %attr(-,root,-) %dir %{_var}/log/audit
 %attr(750,root,root) %dir /etc/audit/plugins.d
 %config(noreplace) %attr(640,root,root) /etc/audit/auditd.conf
@@ -315,6 +311,23 @@ fi
 %attr(750,root,root) %{_sbindir}/audispd-zos-remote
 
 %changelog
+* Wed Aug 12 2026 Attila Lakatos <alakatos@redhat.com> - 4.2.1-3
+- aureport: fix AVC result always showing "unset" without a success filter
+  Resolves: RHEL-172047
+
+* Thu Aug 06 2026 Attila Lakatos <alakatos@redhat.com> - 4.2.1-2
+- Enable TLS transport support in audisp-remote
+  Resolves: RHEL-172047
+
+* Mon May 04 2026 Attila Lakatos <alakatos@redhat.com> - 4.2.1-1
+- Rebase to 4.2.1
+- Revert /run/audit/ migration (selinux-policy not yet updated, RHEL-224026)
+  Resolves: RHEL-172047
+- Prevent netlink congestion causing ENOBUFS errors under heavy file system activity
+  Resolves: RHEL-102929
+- Fix auditctl -h printing spurious error message
+  Resolves: RHEL-185097
+
 * Tue Jan 06 2026 Attila Lakatos <alakatos@redhat.com> - 4.0.3-5
 - Fix POSTIN scriplet to not fail during upgrade
   Resolves: RHEL-128464

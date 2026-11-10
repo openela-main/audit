@@ -1,0 +1,120 @@
+From dfb513670f8950d9a5fd5d06be883e283837dfb0 Mon Sep 17 00:00:00 2001
+From: Cropi <alakatos@redhat.com>
+Date: Thu, 6 Aug 2026 13:42:11 +0200
+Subject: [PATCH 1/2] auditd: add regression tests for V1 plugin dispatch
+ payload length
+
+Add three tests for dispatch_event() covering the AUDISP_PROTOCOL_VER
+path:
+
+- test_netlink_payload_length: kernel-originated events set nlmsg_len
+  to the payload length only (without NLMSG_HDRLEN), so the dispatcher
+  must copy exactly nlmsg_len bytes.
+
+- test_invalid_netlink_length: oversized payload lengths are rejected
+  before the memcpy.
+
+- test_kernel_event_payload_not_truncated: pins the specific bug where
+  a 263-byte kernel event was dispatched as 247 bytes due to an
+  incorrect NLMSG_HDRLEN subtraction. Exercises the rep->nlh ==
+  &rep->msg.nlh path with a mid-range nlmsg_len value.
+
+- test_synthetic_payload_length: locally synthesised V1 events also
+  use nlmsg_len directly as the payload size.
+
+Signed-off-by: Cropi <alakatos@redhat.com>
+---
+ src/test/auditd_dispatch_test.c | 43 +++++++++++++++++++++++++++------
+ 1 file changed, 35 insertions(+), 8 deletions(-)
+
+diff --git a/src/test/auditd_dispatch_test.c b/src/test/auditd_dispatch_test.c
+index dfdc169f..424f544f 100644
+--- a/src/test/auditd_dispatch_test.c
++++ b/src/test/auditd_dispatch_test.c
+@@ -84,7 +84,11 @@ static void free_queued_event(void)
+ }
+ 
+ /*
+- * test_netlink_payload_length - verify netlink headers are not copied as data
++ * test_netlink_payload_length - verify the full payload is copied as-is
++ *
++ * The kernel audit subsystem stores the payload length directly in nlmsg_len
++ * without adding NLMSG_HDRLEN, so the dispatcher must use it without
++ * subtraction.
+  *
+  * Returns: None.
+  */
+@@ -96,7 +100,7 @@ static void test_netlink_payload_length(void)
+ 	memset(rep.msg.data, 'a', sizeof(rep.msg.data));
+ 	rep.type = AUDIT_SYSCALL;
+ 	rep.nlh = &rep.msg.nlh;
+-	rep.msg.nlh.nlmsg_len = NLMSG_LENGTH(sizeof(rep.msg.data));
++	rep.msg.nlh.nlmsg_len = sizeof(rep.msg.data);
+ 
+ 	assert(dispatch_event(&rep, AUDISP_PROTOCOL_VER) == 0);
+ 	assert(queued_event != NULL);
+@@ -107,7 +111,7 @@ static void test_netlink_payload_length(void)
+ }
+ 
+ /*
+- * test_invalid_netlink_length - reject malformed embedded netlink lengths
++ * test_invalid_netlink_length - reject oversized payload lengths
+  *
+  * Returns: None.
+  */
+@@ -117,17 +121,39 @@ static void test_invalid_netlink_length(void)
+ 
+ 	memset(&rep, 0, sizeof(rep));
+ 	rep.nlh = &rep.msg.nlh;
+-	rep.msg.nlh.nlmsg_len = NLMSG_HDRLEN - 1;
++	rep.msg.nlh.nlmsg_len = sizeof(rep.msg.data) + 1;
+ 	assert(dispatch_event(&rep, AUDISP_PROTOCOL_VER) == -1);
+ 	assert(queued_event == NULL);
++}
+ 
+-	rep.msg.nlh.nlmsg_len = NLMSG_LENGTH(sizeof(rep.msg.data)) + 1;
+-	assert(dispatch_event(&rep, AUDISP_PROTOCOL_VER) == -1);
+-	assert(queued_event == NULL);
++/*
++ * test_kernel_event_payload_not_truncated - nlmsg_len used as-is for kernel events
++ *
++ * Pins the fix for the NLMSG_HDRLEN subtraction bug: a kernel-originated
++ * event must arrive at the plugin with exactly nlmsg_len bytes, not
++ * nlmsg_len minus NLMSG_HDRLEN.
++ *
++ * Returns: None.
++ */
++static void test_kernel_event_payload_not_truncated(void)
++{
++	struct audit_reply rep;
++
++	memset(&rep, 0, sizeof(rep));
++	rep.type = AUDIT_SYSCALL;
++	rep.nlh = &rep.msg.nlh;
++	rep.msg.nlh.nlmsg_len = 263;
++	memset(rep.msg.data, 'k', sizeof(rep.msg.data));
++
++	assert(dispatch_event(&rep, AUDISP_PROTOCOL_VER) == 0);
++	assert(queued_event != NULL);
++	assert(queued_event->hdr.size == 263);
++	assert(memcmp(queued_event->data, rep.msg.data, 263) == 0);
++	free_queued_event();
+ }
+ 
+ /*
+- * test_synthetic_payload_length - retain auditd's local V1 length convention
++ * test_synthetic_payload_length - local V1 events use nlmsg_len directly
+  *
+  * Returns: None.
+  */
+@@ -150,6 +176,7 @@ int main(void)
+ {
+ 	test_netlink_payload_length();
+ 	test_invalid_netlink_length();
++	test_kernel_event_payload_not_truncated();
+ 	test_synthetic_payload_length();
+ 	return 0;
+ }
+-- 
+2.55.0
+

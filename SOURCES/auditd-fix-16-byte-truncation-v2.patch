@@ -1,0 +1,70 @@
+From 3d117ad74fda3247a29c3749e872c49187f97629 Mon Sep 17 00:00:00 2001
+From: Cropi <alakatos@redhat.com>
+Date: Thu, 6 Aug 2026 13:42:22 +0200
+Subject: [PATCH 2/2] auditd: fix 16-byte truncation of events dispatched to
+ plugins
+
+The kernel audit subsystem stores the payload length in nlmsg_len rather
+than the full netlink message length (payload + NLMSG_HDRLEN). The V1
+dispatch path incorrectly subtracted NLMSG_HDRLEN from nlmsg_len when
+computing e->hdr.size, causing the last 16 bytes of every event to be
+silently dropped before being written to the plugin pipe.
+
+This manifests as fields at the tail of the audit record (typically
+terminal= and res=) being missing from the syslog plugin output when
+log_format=RAW is in use and no node name is configured (which keeps
+events on the V1 protocol path). The V2 path is unaffected because it
+uses rep->len, which is set correctly by replace_event_msg().
+
+Fix the payload size to use nlmsg_len directly. The two branches of the
+original if/else (rep->nlh == &rep->msg.nlh vs. not) became identical
+after this correction, so collapse them into a single code path. Update
+the upper bound of the sanity check to match: the old limit used
+NLMSG_LENGTH() which added NLMSG_HDRLEN, making it too permissive for
+the corrected size expression.
+
+Signed-off-by: Cropi <alakatos@redhat.com>
+---
+ src/auditd-dispatch.c | 24 ++++++++----------------
+ 1 file changed, 8 insertions(+), 16 deletions(-)
+
+diff --git a/src/auditd-dispatch.c b/src/auditd-dispatch.c
+index 40bed7c8..1bba4f26 100644
+--- a/src/auditd-dispatch.c
++++ b/src/auditd-dispatch.c
+@@ -75,24 +75,16 @@ int dispatch_event(const struct audit_reply *rep, int protocol_ver)
+ 	e->hdr.type = rep->type;
+ 
+ 	if (protocol_ver == AUDISP_PROTOCOL_VER) {
+-		if (rep->nlh == &rep->msg.nlh) {
+-			if (rep->msg.nlh.nlmsg_len < NLMSG_HDRLEN ||
+-			    rep->msg.nlh.nlmsg_len >
+-					NLMSG_LENGTH(sizeof(e->data))) {
+-				free(e);
+-				return -1;
+-			}
+-
+-			/* audit_get_reply marks embedded netlink replies this
+-			 * way. Netlink length includes its header, while
+-			 * event_t contains only payload. Local V0/legacy
+-			 * events retain a payload length here. */
+-			e->hdr.size = rep->msg.nlh.nlmsg_len - NLMSG_HDRLEN;
+-		} else if (rep->msg.nlh.nlmsg_len > sizeof(e->data)) {
++		if (rep->msg.nlh.nlmsg_len > sizeof(e->data)) {
+ 			free(e);
+ 			return -1;
+-		} else
+-			e->hdr.size = rep->msg.nlh.nlmsg_len;
++		}
++
++		/* The kernel audit subsystem stores the payload length in
++		 * nlmsg_len, not the full netlink message length (i.e. it
++		 * does not add NLMSG_HDRLEN). Use it directly as the event
++		 * payload size. */
++		e->hdr.size = rep->msg.nlh.nlmsg_len;
+ 		memcpy(e->data, (void*)rep->msg.data, e->hdr.size);
+ 	} else if (protocol_ver == AUDISP_PROTOCOL_VER2) {
+ 		e->hdr.size = rep->len;
+-- 
+2.55.0
+
